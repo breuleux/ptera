@@ -33,17 +33,16 @@ class Frame:
         self.to_close = []
 
     def register(self, acc, captures, close_at_exit):
-        for cap in captures:
-            self.accumulators[cap.name].append((cap, acc))
+        for cap, varnames in captures.items():
+            for v in varnames:
+                self.accumulators[v].append((cap, acc))
         if close_at_exit:
             self.to_close.append(acc)
 
     def get_accumulators(self, varname):
         return [
             (element, acc)
-            for element, acc in chain(
-                self.accumulators[varname], self.accumulators[None]
-            )
+            for element, acc in self.accumulators[varname]
             if acc.status is ACTIVE
         ]
 
@@ -212,7 +211,8 @@ class Accumulator:
             if may_fail and set(args) != set(names):
                 return ABSENT
             else:
-                rval = fn(**args)
+                with setvar(PatternCollection.current, None):
+                    rval = fn(**args)
         return rval
 
     def merge(self, child):
@@ -293,6 +293,40 @@ def dict_to_collection(*rulesets):
     return PatternCollection(list(tmp.items()))
 
 
+def fits_pattern(pfn, pattern):
+    if isinstance(pfn, str):
+        fname = pfn
+        fcat = None
+        fvars = {}
+    else:
+        fname = pfn.fn.__name__
+        fcat = pfn.fn.__annotations__.get("return", None)
+        fvars = pfn.state.__annotations__
+
+    if not check_element(pattern.element, fname, fcat):
+        return False
+
+    capmap = {
+        cap: [cap.name] if cap.name else []
+        for cap in pattern.captures
+    }
+
+    for cap in pattern.captures:
+        if cap.name and cap.name.startswith("#"):
+            continue
+        if cap.name is None:
+            for var, ann in fvars.items():
+                if check_element(cap, var, ann):
+                    capmap[cap].append(var)
+        elif cap.name not in fvars:
+            return False
+
+    if any(not varnames for varnames in capmap.values()):
+        return False
+
+    return capmap
+
+
 class PatternCollection:
     current = ContextVar("PatternCollection.current", default=None)
 
@@ -300,22 +334,17 @@ class PatternCollection:
         self.patterns = patterns or []
 
     def proceed(self, fn, frame):
-        if isinstance(fn, str):
-            fname = fn
-            fcat = None
-        else:
-            fname = fn.__name__
-            fcat = fn.__annotations__.get("return", None)
         next_patterns = []
         to_process = list(self.patterns)
         while to_process:
             pattern, acc = to_process.pop()
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
-            if check_element(pattern.element, fname, fcat):
+            capmap = fits_pattern(fn, pattern)
+            if capmap is not False:
                 is_template = acc.template
                 acc = acc.fork(focus=pattern.focus or is_template)
-                frame.register(acc, pattern.captures, close_at_exit=is_template)
+                frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
                     if child.collapse:
                         to_process.append((child, acc))
@@ -601,14 +630,14 @@ class PteraFunction(Selfless):
 
     def __call__(self, *args, **kwargs):
         rulesets = []
-        with newframe():
-            plugins = {
-                name: p.instantiate() for name, p in self.plugins.items()
-            }
-            for plugin in plugins.values():
-                rulesets.append(plugin.rules())
-            with overlay(*rulesets):
-                with proceed(self.fn):
+        plugins = {
+            name: p.instantiate() for name, p in self.plugins.items()
+        }
+        for plugin in plugins.values():
+            rulesets.append(plugin.rules())
+        with overlay(*rulesets):
+            with newframe():
+                with proceed(self):
                     if self.callkey is not None:
                         interact("#key", None, None, self, self.callkey)
                     rval = super().__call__(*args, **kwargs)

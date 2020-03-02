@@ -65,7 +65,7 @@ def step(inp, target):
     lossfn: cat.LossFunction
 
     if weight_reg:
-        results = model.using(weights="$param:WeightMatrix")(inp)
+        results = model.using(weights="$param:cat.WeightMatrix")(inp)
         output = results.value
         reg = sum(results.weights.map(lambda param: param.abs().sum()))
         loss = lossfn(output, target) + weight_reg * reg
@@ -141,14 +141,14 @@ def train():
     def hits(output, target):
         return sum(output.max(dim=1).indices == target)
 
-    @my_step.on(Grad("step{!!loss} >> $param:torch.nn.Parameter"))
+    @my_step.on(Grad("step{!!loss} >> $param:cat.Learnable"))
     def update(param):
         param_value, param_grad = param
         param_value.data.sub_(lr * param_grad)
 
     if weight_stats:
 
-        @my_step.on("$param:WeightMatrix")
+        @my_step.on("$param:cat.WeightMatrix")
         def wstat(param):
             absw = param.abs()
             return absw.max(), absw.mean(), absw.min()

@@ -121,6 +121,18 @@ def test_patterns():
     # Function category
     assert _dbrie("*:cat.Fromage{a}") == [{"a": [4]}, {"a": [100]}]
 
+    # Inexistent category
+    assert _dbrie("brie > $x:cat.Xylophone") == []
+
+
+@pytest.mark.xfail(reason="Type selectors with generic variable names are currently broken.")
+def test_type_selectors():
+    assert _dbrie("brie > $i:int") == [
+        {"i": [2]}, {"i": [3]}, {"i": [4]}, {"i": [9]}, {"i": [10]},
+        {"i": [11]}, {"i": [100]}, {"i": [121]}
+    ]
+    assert _dbrie("brie > $s:str") == []
+
 
 @ptera
 def snapple(x):
@@ -369,3 +381,24 @@ def test_capture():
         cap.name
     with pytest.raises(ValueError):
         cap.value
+
+
+@ptera
+def cake():
+    flavour: cat.Flavour
+    return f"This is a {flavour} cake"
+
+
+@ptera
+def fruitcake():
+    my_cake = cake.new(flavour="fruit").clone(return_object=True)
+    @my_cake.on("flavour")
+    def yum(flavour):
+        return flavour * 2
+    return my_cake()
+
+
+def test_listener_within_ptera():
+    res = fruitcake()
+    assert res.value == "This is a fruit cake"
+    assert res.yum == ["fruitfruit"]
