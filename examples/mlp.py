@@ -41,7 +41,7 @@ def layer(inp):
     b: cat.Learnable & cat.BiasVector
     actfn: cat.ActivationFunction
 
-    act = inp @ W + b
+    act = torch.nn.functional.linear(inp, W, b)
     return actfn(act)
 
 
@@ -77,9 +77,12 @@ def step(inp, target):
 
 
 def param(nin, nout, bias=False):
-    return torch.nn.Parameter(
-        (torch.rand(1 if bias else nin, nout) * 2 - 1) / (nin ** 0.5)
-    )
+    if bias:
+        return torch.nn.Parameter((torch.rand(1, nout) * 2 - 1) / (nin ** 0.5))
+    else:
+        return torch.nn.Parameter(
+            (torch.rand(nout, nin) * 2 - 1) / (nin ** 0.5)
+        )
 
 
 @ptera
@@ -139,12 +142,12 @@ def train():
 
     @my_step.on("step{target} > output")
     def hits(output, target):
-        return sum(output.max(dim=1).indices == target)
+        return (output.max(dim=1).indices == target).sum()
 
-    @my_step.on(Grad("step{!!loss} >> $param:cat.Learnable"))
-    def update(param):
-        param_value, param_grad = param
-        param_value.data.sub_(lr * param_grad)
+    # @my_step.on(Grad("step{!!loss} >> $param:cat.Learnable"))
+    # def update(param):
+    #     param_value, param_grad = param
+    #     param_value.data.sub_(lr * param_grad)
 
     if weight_stats:
 
@@ -164,24 +167,35 @@ def train():
             res = my_step(inp, tgt)
             running_losses.append(res.value)
             running_hits.append(int(sum(res.hits)) / batch_size)
-            loss = sum(running_losses) / len(running_hits)
-            accuracy = sum(running_hits) / len(running_hits)
-            stats = [
-                f"E: {i + 1}/{epochs}",
-                f"B: {j + 1}/{nbatch}",
-                f"L: {loss:2.5f}",
-                f"A: {accuracy:.0%}",
-            ]
-            if weight_stats:
-                data = tuple(zip(*res.wstat))
-                mx = max(data[0])
-                avg = sum(data[1]) / len(data[1])
-                mn = min(data[2])
-                stats.append(f"W: {mx:.4f} > {avg:.4f} > {mn:.4f}")
-            print(" -- ".join(stats))
+            if j % 50 == 0:
+                loss = sum(running_losses) / len(running_hits)
+                accuracy = sum(running_hits) / len(running_hits)
+                stats = [
+                    f"E: {i + 1}/{epochs}",
+                    f"B: {j + 1}/{nbatch}",
+                    f"L: {loss:2.5f}",
+                    f"A: {accuracy:.0%}",
+                ]
+                if weight_stats:
+                    data = tuple(zip(*res.wstat))
+                    mx = max(data[0])
+                    avg = sum(data[1]) / len(data[1])
+                    mn = min(data[2])
+                    stats.append(f"W: {mx:.4f} > {avg:.4f} > {mn:.4f}")
+                print(" -- ".join(stats))
 
 
 if __name__ == "__main__":
     auto_cli(
         train, category=cat.CliArgument, eval_env=globals(), config_option=True
+    )
+
+
+def test_mlp():
+    auto_cli(
+        train,
+        category=cat.CliArgument,
+        eval_env=globals(),
+        config_option=True,
+        argv="--config config.json".split(),
     )
