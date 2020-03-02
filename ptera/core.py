@@ -39,16 +39,11 @@ class Frame:
         if close_at_exit:
             self.to_close.append(acc)
 
-    def get_accumulators(self, varname):
-        return [
-            (element, acc)
-            for element, acc in self.accumulators[varname]
-            if acc.status is ACTIVE
-        ]
-
     def run(self, method, varname, category, value=ABSENT, mayfail=True):
         rval = ABSENT
-        for element, acc in self.get_accumulators(varname):
+        for element, acc in self.accumulators[varname]:
+            if acc.status is not ACTIVE:
+                continue
             acc = acc.match(element, varname, category, value, mayfail=mayfail)
             if acc:
                 tmp = getattr(acc, method)(element, varname, category, value)
@@ -263,14 +258,13 @@ class Accumulator:
 
 
 def get_names(fn):
-    if hasattr(fn, "_ptera_argspec"):
-        return fn._ptera_argspec
-    else:
+    if not hasattr(fn, "_ptera_argspec"):
         spec = inspect.getfullargspec(fn)
         if spec.args and spec.args[0] == "self":
-            return None, spec.args[1:]
+            fn._ptera_argspec = None, spec.args[1:]
         else:
-            return None, spec.args
+            fn._ptera_argspec = None, spec.args
+    return fn._ptera_argspec
 
 
 def dict_to_collection(*rulesets):
@@ -340,7 +334,12 @@ class PatternCollection:
             pattern, acc = to_process.pop()
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
-            capmap = fits_pattern(fn, pattern)
+            if isinstance(fn, PteraFunction):
+                if pattern not in fn._match_cache:
+                    fn._match_cache[pattern] = fits_pattern(fn, pattern)
+                capmap = fn._match_cache[pattern]
+            else:
+                capmap = fits_pattern(fn, pattern)
             if capmap is not False:
                 is_template = acc.template
                 acc = acc.fork(focus=pattern.focus or is_template)
@@ -556,6 +555,7 @@ class PteraFunction(Selfless):
         self.callkey = callkey
         self.plugins = plugins or {}
         self.return_object = return_object
+        self._match_cache = {}
 
     def clone(self, **kwargs):
         kwargs = {
