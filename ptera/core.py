@@ -10,17 +10,6 @@ from .selfless import Override, Selfless, choose, override
 from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures, setvar
 
 
-def check_element(el, name, category, value=ABSENT):
-    if el.name is not None and el.name != name:
-        return False
-    elif not match_category(el.category, category):
-        return False
-    elif el.value is not ABSENT and el.value != value:
-        return False
-    else:
-        return True
-
-
 class Frame:
 
     top = ContextVar("Frame.top", default=None)
@@ -82,33 +71,25 @@ class Capture:
     def name(self):
         if self.element.name is not None:
             return self.element.name
-        if len(self.names) == 0:
+        if len(self.names) == 1:
+            return self.names[0]
+        elif len(self.names) == 0:
             raise ValueError(f"No name for capture `{self.capture}`")
-        if len(self.names) > 1:
+        else:
             raise ValueError(
                 f"Multiple names stored for capture `{self.capture}`"
             )
-        return self.names[0]
 
     @property
     def value(self):
-        if len(self.values) == 0:
+        if len(self.values) == 1:
+            return self.values[0]
+        elif len(self.values) == 0:
             raise ValueError(f"No value for capture `{self.capture}`")
-        if len(self.values) > 1:
+        else:
             raise ValueError(
                 f"Multiple values stored for capture `{self.capture}`"
             )
-        return self.values[0]
-
-    def nomatch(self):
-        return None if self.element.name is None else False
-
-    def check(self, varname, category, value):
-        rval = check_element(self.element, varname, category, value)
-        if rval:
-            return True
-        else:
-            return self.nomatch()
 
     def acquire(self, varname, value):
         assert varname is not None
@@ -156,19 +137,11 @@ class Accumulator:
 
     def match(self, element, varname, category, value, mayfail=True):
         assert self.status is ACTIVE
-        if element.focus:
-            acc = self.fork()
+        if element.value is ABSENT or element.value == value:
+            return self.fork() if element.focus else self
         else:
-            acc = self
-        cap = acc.getcap(element)
-        status = cap.check(varname, category, value)
-        if status is True:
-            return acc
-        elif status is False:
             if mayfail:
                 self.fail()
-            return None
-        else:
             return None
 
     def varset(self, element, varname, category, value):
@@ -291,6 +264,15 @@ def dict_to_collection(*rulesets):
                     acc = tmp[this_pattern]
                     acc.rules[name].append(entry)
     return PatternCollection(list(tmp.items()))
+
+
+def check_element(el, name, category):
+    if el.name is not None and el.name != name:
+        return False
+    elif not match_category(el.category, category):
+        return False
+    else:
+        return True
 
 
 def fits_pattern(pfn, pattern):
