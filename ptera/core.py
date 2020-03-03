@@ -295,7 +295,7 @@ def fits_pattern(pfn, pattern):
     else:
         fname = pfn.fn.__name__
         fcat = pfn.fn.__annotations__.get("return", None)
-        fvars = pfn.state.__annotations__
+        fvars = pfn.state_obj.__annotations__
 
     if not check_element(pattern.element, fname, fcat):
         return False
@@ -392,7 +392,7 @@ def overlay(*rulesets):
 
 
 def interact(sym, key, category, __self__, value):
-    from_state = __self__.get(sym)
+    from_state = getattr(__self__.state_obj, sym, ABSENT)
 
     if key is None:
         fr = Frame.top.get()
@@ -558,9 +558,10 @@ class PteraFunction(Selfless):
         self._match_cache = {}
 
     def clone(self, **kwargs):
+        self.ensure_state()
         kwargs = {
             "fn": self.fn,
-            "state": copy(self.state),
+            "state": copy(self.state_obj),
             "callkey": self.callkey,
             "plugins": self.plugins,
             "return_object": self.return_object,
@@ -629,6 +630,7 @@ class PteraFunction(Selfless):
         return deco
 
     def __call__(self, *args, **kwargs):
+        self.ensure_state()
         rulesets = []
         plugins = {
             name: p.instantiate() for name, p in self.plugins.items()

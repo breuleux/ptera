@@ -347,28 +347,33 @@ def state_class(fname, slots, vardoc, annotations):
 class Selfless:
     def __init__(self, fn, state):
         self.fn = fn
-        self._state = state
+        self.state_obj = state
 
     @property
     def state(self):
-        if isinstance(self._state, PreState):
-            self._state = self._state.make()
-        return self._state
+        self.ensure_state()
+        return self.state_obj
+
+    def ensure_state(self):
+        if isinstance(self.state_obj, PreState):
+            self.state_obj = self.state_obj.make()
 
     def new(self, **values):
         rval = self.clone()
         for k, v in values.items():
-            setattr(rval.state, k, v)
+            setattr(rval.state_obj, k, v)
         return rval
 
     def clone(self, **kwargs):
-        kwargs = {"fn": self.fn, "state": copy(self.state), **kwargs}
+        self.ensure_state()
+        kwargs = {"fn": self.fn, "state": copy(self.state_obj), **kwargs}
         return type(self)(**kwargs)
 
     def get(self, name):
-        return getattr(self.state, name, ABSENT)
+        return getattr(self.state_obj, name, ABSENT)
 
     def __call__(self, *args, **kwargs):
+        self.ensure_state()
         args = [override(arg, priority=0.5) for arg in args]
         kwargs = {k: override(arg, priority=0.5) for k, arg in kwargs.items()}
         return self.fn(self, *args, **kwargs)
