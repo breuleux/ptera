@@ -509,7 +509,10 @@ def _resolve(pattern, env):
             children=tuple(_resolve(x, env) for x in pattern.children),
         )
     elif isinstance(pattern, Element):
-        return pattern.clone(category=_eval(pattern.category, env))
+        category = _eval(pattern.category, env)
+        if category is not None and not isinstance(category, Category):
+            raise TypeError(f'A pattern can only be a Category.')
+        return pattern.clone(category=category)
 
 
 def _to_pattern(pattern, context="root"):

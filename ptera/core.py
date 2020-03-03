@@ -13,7 +13,7 @@ from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures, setvar
 def check_element(el, name, category, value=ABSENT):
     if el.name is not None and el.name != name:
         return False
-    elif not match_category(el.category, category, value):
+    elif not match_category(el.category, category):
         return False
     elif el.value is not ABSENT and el.value != value:
         return False

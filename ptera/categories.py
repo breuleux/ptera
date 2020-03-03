@@ -37,6 +37,9 @@ class CategorySet:
     def __eq__(self, other):
         return isinstance(other, CategorySet) and other.members == self.members
 
+    def __hash__(self):
+        return hash(self.members)
+
     def __repr__(self):
         return "&".join(sorted(map(str, self.members)))
 
@@ -48,35 +51,15 @@ class _CategoryFactory:
         return Category(name)
 
 
-def match_category(to_match, category, value=ABSENT):
-    if category is None:
-        cats = set()
-    elif isinstance(category, CategorySet):
-        cats = category.members
-    else:
-        cats = {category}
-
-    rval = False
+def match_category(to_match, category):
     if to_match is None:
-        rval = True
-    elif isinstance(to_match, type) and isinstance(value, to_match):
-        rval = True
-
-    for cat in cats:
-        if isinstance(cat, type):
-            if value is ABSENT:
-                if isinstance(to_match, type) and issubclass(to_match, cat):
-                    rval = True
-            elif not isinstance(value, cat):
-                raise TypeError(f"Expected type {cat} for {value}")
-        elif (
-            isinstance(cat, Category)
-            and isinstance(to_match, Category)
-            and cat == to_match
-        ):
-            rval = True
-
-    return rval
+        return True
+    if category is None:
+        return False
+    elif isinstance(category, CategorySet):
+        return any(cat == to_match for cat in category.members)
+    else:
+        return category == to_match
 
 
 cat = _CategoryFactory()

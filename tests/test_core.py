@@ -115,31 +115,11 @@ def test_patterns():
         {"a": [13], "v": [121]},
     ]
 
-    assert _dbrie("brie > x:int") == [{"x": [2]}, {"x": [10]}]
-    assert _dbrie("brie > x:float") == []
-
     # Function category
     assert _dbrie("*:cat.Fromage{a}") == [{"a": [4]}, {"a": [100]}]
 
     # Inexistent category
     assert _dbrie("brie > $x:cat.Xylophone") == []
-
-
-@pytest.mark.xfail(
-    reason="Type selectors with generic variable names are currently broken."
-)
-def test_type_selectors():
-    assert _dbrie("brie > $i:int") == [
-        {"i": [2]},
-        {"i": [3]},
-        {"i": [4]},
-        {"i": [9]},
-        {"i": [10]},
-        {"i": [11]},
-        {"i": [100]},
-        {"i": [121]},
-    ]
-    assert _dbrie("brie > $s:str") == []
 
 
 @ptera

@@ -241,6 +241,10 @@ def test_to_pattern():
 
 
 def test_to_pattern_errors():
+    with pytest.raises(TypeError):
+        # Variable category cannot be a type
+        sel.to_pattern("x:int")
+
     with pytest.raises(Exception):
         sel.to_pattern("x:blahblahblah")
 
