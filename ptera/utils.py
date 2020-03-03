@@ -1,6 +1,5 @@
 import functools
 import inspect
-from contextlib import contextmanager
 
 
 class Named:
@@ -32,13 +31,17 @@ COMPLETE = Named("COMPLETE")
 FAILED = Named("FAILED")
 
 
-@contextmanager
-def setvar(var, value):
-    reset = var.set(value)
-    try:
-        yield value
-    finally:
-        var.reset(reset)
+class setvar:
+    def __init__(self, var, value):
+        self.var = var
+        self.value = value
+
+    def __enter__(self):
+        self.reset = self.var.set(self.value)
+        return self.value
+
+    def __exit__(self, typ, exc, tb):
+        self.var.reset(self.reset)
 
 
 def keyword_decorator(deco):

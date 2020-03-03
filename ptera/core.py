@@ -1,7 +1,6 @@
 import functools
 import inspect
 from collections import defaultdict
-from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy
 from itertools import chain
@@ -353,42 +352,55 @@ class PatternCollection:
         return rval
 
 
-@contextmanager
-def newframe():
-    frame = Frame(None)
-    try:
-        with setvar(Frame.top, frame):
-            yield frame
-    finally:
-        frame.exit()
+class newframe:
+    def __enter__(self):
+        self.frame = Frame(None)
+        self.reset = Frame.top.set(self.frame)
+        return self.frame
+
+    def __exit__(self, typ, exc, tb):
+        Frame.top.reset(self.reset)
+        self.frame.exit()
 
 
-@contextmanager
-def proceed(fn):
-    curr = PatternCollection.current.get()
-    frame = Frame.top.get()
-    if curr is None:
-        yield None
-    else:
-        new = curr.proceed(fn, frame)
-        with setvar(PatternCollection.current, new):
-            yield new
+class proceed:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __enter__(self):
+        self.curr = PatternCollection.current.get()
+        frame = Frame.top.get()
+        if self.curr is None:
+            return None
+        else:
+            new = self.curr.proceed(self.fn, frame)
+        self.reset = PatternCollection.current.set(new)
+        return new
+
+    def __exit__(self, typ, exc, tb):
+        if self.curr is not None:
+            PatternCollection.current.reset(self.reset)
 
 
-@contextmanager
-def overlay(*rulesets):
-    rulesets = [rules for rules in rulesets if rules]
+class overlay:
+    def __init__(self, *rulesets):
+        self.rulesets = [rules for rules in rulesets if rules]
 
-    if not rulesets:
-        yield None
+    def __enter__(self):
+        if not self.rulesets:
+            return None
 
-    else:
-        collection = dict_to_collection(*rulesets)
-        curr = PatternCollection.current.get()
-        if curr is not None:
-            collection.patterns = curr.patterns + collection.patterns
-        with setvar(PatternCollection.current, collection):
-            yield collection
+        else:
+            collection = dict_to_collection(*self.rulesets)
+            curr = PatternCollection.current.get()
+            if curr is not None:
+                collection.patterns = curr.patterns + collection.patterns
+            self.reset = PatternCollection.current.set(collection)
+            return collection
+
+    def __exit__(self, typ, exc, tb):
+        if self.rulesets:
+            PatternCollection.current.reset(self.reset)
 
 
 def interact(sym, key, category, __self__, value):
