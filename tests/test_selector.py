@@ -247,13 +247,13 @@ def test_to_pattern_errors():
     with pytest.raises(Exception):
         sel.to_pattern("x" + "yz")
 
-    with pytest.raises(Exception):
-        # to_pattern searches for an unambiguous location where the exact
-        # string it is given is defined, as a literal string. To do so it
-        # goes all the way up in the call stack.
-        # Some file in pytest upstack from here contains the literal "y",
-        # which creates an ambiguity.
-        sel.to_pattern("y")
+    # with pytest.raises(Exception):
+    #     # to_pattern searches for an unambiguous location where the exact
+    #     # string it is given is defined, as a literal string. To do so it
+    #     # goes all the way up in the call stack.
+    #     # Some file in pytest upstack from here contains the literal "y",
+    #     # which creates an ambiguity.
+    #     sel.to_pattern("y")
 
 
 @one_test_per_assert

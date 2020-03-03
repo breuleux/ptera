@@ -471,6 +471,9 @@ def _find_eval_env(s, fr):
     ev = None
     while fr is not None:
         filename = fr.f_code.co_filename
+        if "/_pytest/" in filename or "/pluggy/" in filename:
+            fr = fr.f_back
+            continue
         lineno = _find_string(s, filename)
         if lineno is not None:
             if ev is not None:
