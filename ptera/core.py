@@ -105,14 +105,12 @@ class Capture:
 class Accumulator:
     def __init__(
         self,
-        names,
         parent=None,
         rules=None,
         template=True,
         pattern=None,
         focus=True,
     ):
-        self.names = set(names)
         self.pattern = pattern
         self.parent = parent
         self.children = []
@@ -181,8 +179,7 @@ class Accumulator:
         rval = ABSENT
         for fn in self.rules[rulename]:
             args = self.build()
-            _, names = get_names(fn)
-            if may_fail and set(args) != set(names):
+            if may_fail and set(args) != set(get_names(fn)):
                 return ABSENT
             else:
                 with setvar(PatternCollection.current, None):
@@ -227,7 +224,6 @@ class Accumulator:
     def fork(self, focus=True):
         parent = None if self.template else self
         return Accumulator(
-            self.names,
             parent,
             rules=self.rules,
             template=False,
@@ -240,9 +236,9 @@ def get_names(fn):
     if not hasattr(fn, "_ptera_argspec"):
         spec = inspect.getfullargspec(fn)
         if spec.args and spec.args[0] == "self":
-            fn._ptera_argspec = None, spec.args[1:]
+            fn._ptera_argspec = spec.args[1:]
         else:
-            fn._ptera_argspec = None, spec.args
+            fn._ptera_argspec = spec.args
     return fn._ptera_argspec
 
 
@@ -255,13 +251,11 @@ def dict_to_collection(*rulesets):
                 if not isinstance(entries, (tuple, list)):
                     entries = [entries]
                 for entry in entries:
-                    focus, names = get_names(entry)
-                    this_pattern = pattern.rewrite(names, focus=focus)
-                    if this_pattern not in tmp:
-                        tmp[this_pattern] = Accumulator(
-                            names, pattern=this_pattern
+                    if pattern not in tmp:
+                        tmp[pattern] = Accumulator(
+                            pattern=pattern
                         )
-                    acc = tmp[this_pattern]
+                    acc = tmp[pattern]
                     acc.rules[name].append(entry)
     return PatternCollection(list(tmp.items()))
 
@@ -313,13 +307,14 @@ class PatternCollection:
         self.patterns = patterns or []
 
     def proceed(self, fn, frame):
+        ispf = isinstance(fn, PteraFunction)
         next_patterns = []
         to_process = list(self.patterns)
         while to_process:
             pattern, acc = to_process.pop()
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
-            if isinstance(fn, PteraFunction):
+            if ispf:
                 capmap = fn._match_cache.get(pattern, ABSENT)
                 if capmap is ABSENT:
                     capmap = fits_pattern(fn, pattern)
@@ -444,7 +439,7 @@ class Collector:
         def listener(**kwargs):
             self.data.append(kwargs)
 
-        listener._ptera_argspec = None, set(self.pattern.all_captures())
+        listener._ptera_argspec = set(self.pattern.all_captures())
         self._listener = listener
 
     def __iter__(self):
@@ -465,9 +460,7 @@ class Collector:
         else:
             assert len(args) == 1
             (fn,) = args
-            return [
-                call_with_captures(fn, entry) for entry in transform_all(self)
-            ]
+            return [fn(**entry) for entry in transform_all(self)]
 
     def map(self, *args):
         return self._map_helper(

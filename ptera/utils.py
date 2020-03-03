@@ -1,3 +1,4 @@
+from types import FunctionType
 import functools
 import inspect
 
@@ -63,14 +64,24 @@ def keyword_decorator(deco):
 
 
 def call_with_captures(fn, captures, full=True):
-    args = inspect.getfullargspec(fn)
-    if args.varkw:
+    # TODO: merge with get_names
+    if not hasattr(fn, "_ptera_argnames"):
+        args = inspect.getfullargspec(fn)
+        if args.varkw:
+            args = True
+        else:
+            args = args.args + args.kwonlyargs
+        if isinstance(fn, FunctionType):
+            fn._ptera_argnames = args
+    else:
+        args = fn._ptera_argnames
+    if args is True:
         kwargs = captures
     else:
         kwargs = {}
-        for k, v in captures.items():
-            if k in args.args or k in args.kwonlyargs or args.varkw:
-                kwargs[k] = v
+        for k in args:
+            if k != "self":
+                kwargs[k] = captures[k]
     if not full:
         kwargs = {k: v.value for k, v in kwargs.items()}
     return fn(**kwargs)

@@ -44,7 +44,7 @@ class GrabAll:
                 {name: cap.values for name, cap in kwargs.items()}
             )
 
-        listener._ptera_argspec = None, set(pattern.all_captures())
+        listener._ptera_argspec = set(pattern.all_captures())
         self.rules = {pattern: {"listeners": listener}}
 
 
