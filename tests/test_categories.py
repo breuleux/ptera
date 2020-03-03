@@ -8,7 +8,7 @@ from .common import one_test_per_assert
 @one_test_per_assert
 def test_category():
     assert cat.Fruit == cat.Fruit
-    assert cat.Fruit == Category("Fruit")
+    assert cat.Fruit is cat.Fruit
 
 
 @one_test_per_assert

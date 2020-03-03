@@ -12,12 +12,6 @@ class Category:
     def __init__(self, name):
         self.name = name
 
-    def __eq__(self, other):
-        return isinstance(other, Category) and other.name == self.name
-
-    def __hash__(self):
-        return hash(self.name)
-
     __and__ = _merge
     __rand__ = _merge
 
@@ -47,8 +41,13 @@ class CategorySet:
 
 
 class _CategoryFactory:
+    def __init__(self):
+        self._cache = {}
+
     def __getattr__(self, name):
-        return Category(name)
+        if name not in self._cache:
+            self._cache[name] = Category(name)
+        return self._cache[name]
 
 
 def match_category(to_match, category):
