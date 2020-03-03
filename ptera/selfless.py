@@ -268,7 +268,10 @@ def transform(fn, interact):
     exec(new_fn, glb, glb)
 
     state = {
-        k: eval(compile(ast.Expression(v), filename, "eval"), glb, glb)
+        k: override(
+            eval(compile(ast.Expression(v), filename, "eval"), glb, glb),
+            priority=-0.5
+        )
         for k, v in transformer.defaults.items()
     }
 
@@ -374,8 +377,6 @@ class Selfless:
 
     def __call__(self, *args, **kwargs):
         self.ensure_state()
-        args = [override(arg, priority=0.5) for arg in args]
-        kwargs = {k: override(arg, priority=0.5) for k, arg in kwargs.items()}
         return self.fn(self, *args, **kwargs)
 
     def __str__(self):
