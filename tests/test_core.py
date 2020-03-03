@@ -125,11 +125,19 @@ def test_patterns():
     assert _dbrie("brie > $x:cat.Xylophone") == []
 
 
-@pytest.mark.xfail(reason="Type selectors with generic variable names are currently broken.")
+@pytest.mark.xfail(
+    reason="Type selectors with generic variable names are currently broken."
+)
 def test_type_selectors():
     assert _dbrie("brie > $i:int") == [
-        {"i": [2]}, {"i": [3]}, {"i": [4]}, {"i": [9]}, {"i": [10]},
-        {"i": [11]}, {"i": [100]}, {"i": [121]}
+        {"i": [2]},
+        {"i": [3]},
+        {"i": [4]},
+        {"i": [9]},
+        {"i": [10]},
+        {"i": [11]},
+        {"i": [100]},
+        {"i": [121]},
     ]
     assert _dbrie("brie > $s:str") == []
 
@@ -392,9 +400,11 @@ def cake():
 @ptera
 def fruitcake():
     my_cake = cake.new(flavour="fruit").clone(return_object=True)
+
     @my_cake.on("flavour")
     def yum(flavour):
         return flavour * 2
+
     return my_cake()
 
 
