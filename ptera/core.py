@@ -299,10 +299,7 @@ def fits_pattern(pfn, pattern):
     if not check_element(pattern.element, fname, fcat):
         return False
 
-    capmap = {
-        cap: [cap.name] if cap.name else []
-        for cap in pattern.captures
-    }
+    capmap = {cap: [cap.name] if cap.name else [] for cap in pattern.captures}
 
     for cap in pattern.captures:
         if cap.name and cap.name.startswith("#"):
@@ -334,9 +331,10 @@ class PatternCollection:
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
             if isinstance(fn, PteraFunction):
-                if pattern not in fn._match_cache:
-                    fn._match_cache[pattern] = fits_pattern(fn, pattern)
-                capmap = fn._match_cache[pattern]
+                capmap = fn._match_cache.get(pattern, ABSENT)
+                if capmap is ABSENT:
+                    capmap = fits_pattern(fn, pattern)
+                    fn._match_cache[pattern] = capmap
             else:
                 capmap = fits_pattern(fn, pattern)
             if capmap is not False:
@@ -644,9 +642,7 @@ class PteraFunction(Selfless):
     def __call__(self, *args, **kwargs):
         self.ensure_state()
         rulesets = []
-        plugins = {
-            name: p.instantiate() for name, p in self.plugins.items()
-        }
+        plugins = {name: p.instantiate() for name, p in self.plugins.items()}
         for plugin in plugins.values():
             rulesets.append(plugin.rules())
         with overlay(*rulesets):
