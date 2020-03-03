@@ -3,11 +3,10 @@ import inspect
 from collections import defaultdict
 from contextvars import ContextVar
 from copy import copy
-from itertools import chain
 
 from .categories import match_category
 from .selector import to_pattern
-from .selfless import Selfless, choose, override
+from .selfless import Override, Selfless, choose, override
 from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures, setvar
 
 
@@ -30,8 +29,12 @@ class Frame:
         self.function_name = fname
         self.accumulators = defaultdict(list)
         self.to_close = []
+        self.possible_rules = set()
 
     def register(self, acc, captures, close_at_exit):
+        for rulename, rules in acc.rules.items():
+            if rules:
+                self.possible_rules.add(rulename)
         for cap, varnames in captures.items():
             for v in varnames:
                 self.accumulators[v].append((cap, acc))
@@ -51,13 +54,17 @@ class Frame:
         return rval
 
     def set(self, varname, key, category, value):
-        self.run("varset", varname, category, value)
+        if varname not in self.accumulators:
+            return ABSENT
+        if self.possible_rules:
+            self.run("varset", varname, category, value)
 
     def get(self, varname, key, category):
-        rval = self.run("varget", varname, category, mayfail=False)
-        if rval is ABSENT:
-            raise NameError(f"Cannot get value for variable `{varname}`")
-        return rval
+        if varname not in self.accumulators:
+            return ABSENT
+        if "value" not in self.possible_rules:
+            return ABSENT
+        return self.run("varget", varname, category, mayfail=False)
 
     def exit(self):
         for acc in self.to_close:
@@ -406,11 +413,22 @@ def interact(sym, key, category, __self__, value):
 
     if key is None:
         fr = Frame.top.get()
-        try:
-            fr_value = fr.get(sym, key, category)
-        except NameError:
-            fr_value = ABSENT
-        success, value = choose([value, fr_value, from_state])
+        fr_value = fr.get(sym, key, category)
+        if (
+            value is ABSENT
+            and fr_value is ABSENT
+            and not isinstance(from_state, Override)
+        ):
+            value = from_state
+            success = value is not ABSENT
+        elif (
+            fr_value is ABSENT
+            and from_state is ABSENT
+            and not isinstance(value, Override)
+        ):
+            success = value is not ABSENT
+        else:
+            success, value = choose([value, fr_value, from_state])
         if not success:
             raise NameError(f"Variable {sym} of {__self__} is not set.")
         fr.set(sym, key, category, value)
@@ -424,6 +442,10 @@ def interact(sym, key, category, __self__, value):
                 # TODO: merge the return value of interact (currently raises
                 # ConflictError)
                 interact("#value", None, category, __self__, value)
+                if value is ABSENT and not isinstance(from_state, Override):
+                    return from_state
+                elif from_state is ABSENT and not isinstance(value, Override):
+                    return value
                 success, value = choose([value, from_state])
                 # TODO: it is not clear at the moment in what circumstance
                 # success may fail to be true
