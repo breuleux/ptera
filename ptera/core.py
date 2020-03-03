@@ -123,6 +123,8 @@ class Accumulator:
             self.parent.children.append(self)
 
     def getcap(self, element):
+        if element.capture is None:
+            return None
         if element.capture not in self.captures:
             cap = Capture(element)
             self.captures[element.capture] = cap
@@ -145,7 +147,8 @@ class Accumulator:
     def varset(self, element, varname, category, value):
         assert self.status is ACTIVE
         cap = self.getcap(element)
-        cap.acquire(varname, value)
+        if cap:
+            cap.acquire(varname, value)
 
     def varget(self, element, varname, category, _):
         assert self.status is ACTIVE
@@ -155,30 +158,29 @@ class Accumulator:
         cap.names.append(varname)
         rval = self.run("value", may_fail=False)
         if rval is ABSENT:
-            cap.names.pop()
+            if len(cap.names) == 1:
+                del self.captures[element.capture]
+            else:
+                cap.names.pop()
         else:
             cap.values.append(rval)
         return rval
 
     def build(self):
+        if self.parent is None:
+            return self.captures
         rval = {}
         curr = self
         while curr:
-            rval.update(
-                {
-                    name: cap
-                    for name, cap in curr.captures.items()
-                    if (cap.values or cap.names) and name is not None
-                }
-            )
+            rval.update(curr.captures)
             curr = curr.parent
         return rval
 
     def run(self, rulename, may_fail):
         assert self.status is ACTIVE
         rval = ABSENT
+        args = self.build()
         for fn in self.rules[rulename]:
-            args = self.build()
             if may_fail and set(args) != set(get_names(fn)):
                 return ABSENT
             else:
@@ -215,10 +217,8 @@ class Accumulator:
                 for acc in self._to_merge():
                     self.merge(acc)
                 leaves = self.leaves()
-                for leaf in leaves:
+                for leaf in leaves or [self]:
                     leaf.run("listeners", may_fail=True)
-                if not leaves:
-                    self.run("listeners", may_fail=True)
             self.status = COMPLETE
 
     def fork(self, focus=True, pattern=None):
