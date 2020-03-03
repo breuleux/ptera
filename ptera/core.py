@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from copy import copy
 
 from .categories import match_category
-from .selector import to_pattern
+from .selector import Element, to_pattern
 from .selfless import Override, Selfless, choose, override
 from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures, setvar
 
@@ -136,7 +136,7 @@ class Accumulator:
     def match(self, element, varname, category, value, mayfail=True):
         assert self.status is ACTIVE
         if element.value is ABSENT or element.value == value:
-            return self.fork() if element.focus else self
+            return self.fork(pattern=element) if element.focus else self
         else:
             if mayfail:
                 self.fail()
@@ -193,7 +193,7 @@ class Accumulator:
             mycap.values += cap.values
 
     def leaves(self):
-        if not self.children and self.focus:
+        if isinstance(self.pattern, Element) and self.focus:
             return [self]
         else:
             rval = []
@@ -221,13 +221,13 @@ class Accumulator:
                     self.run("listeners", may_fail=True)
             self.status = COMPLETE
 
-    def fork(self, focus=True):
+    def fork(self, focus=True, pattern=None):
         parent = None if self.template else self
         return Accumulator(
             parent,
             rules=self.rules,
             template=False,
-            pattern=self.pattern,
+            pattern=pattern,
             focus=focus,
         )
 
@@ -282,20 +282,19 @@ def fits_pattern(pfn, pattern):
     if not check_element(pattern.element, fname, fcat):
         return False
 
-    capmap = {cap: [cap.name] if cap.name else [] for cap in pattern.captures}
+    capmap = {}
 
     for cap in pattern.captures:
-        if cap.name and cap.name.startswith("#"):
-            continue
         if cap.name is None:
-            for var, ann in fvars.items():
-                if check_element(cap, var, ann):
-                    capmap[cap].append(var)
-        elif cap.name not in fvars:
-            return False
-
-    if any(not varnames for varnames in capmap.values()):
-        return False
+            varnames = [var for var, ann in fvars.items()
+                        if check_element(cap, var, ann)]
+            if not varnames:
+                return False
+            capmap[cap] = varnames
+        else:
+            if not cap.name.startswith("#") and cap.name not in fvars:
+                return False
+            capmap[cap] = [cap.name]
 
     return capmap
 
@@ -323,7 +322,8 @@ class PatternCollection:
                 capmap = fits_pattern(fn, pattern)
             if capmap is not False:
                 is_template = acc.template
-                acc = acc.fork(focus=pattern.focus or is_template)
+                acc = acc.fork(focus=pattern.focus or is_template,
+                               pattern=pattern)
                 frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
                     if child.collapse:
