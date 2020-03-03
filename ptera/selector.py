@@ -11,18 +11,37 @@ from .categories import Category
 from .utils import ABSENT
 
 
-@dataclass(frozen=True)
-class Element:
-    name: object
-    value: object = ABSENT
-    category: Category = None
-    capture: object = None
-    tags: frozenset = frozenset()
-    key_field: str = None
+class InternedMC(type):
+    def __new__(cls, name, bases, dct):
+        dct["_cache"] = {}
+        return super().__new__(cls, name, bases, dct)
 
-    @property
-    def focus(self):
-        return 1 in self.tags
+    def __call__(cls, **kwargs):
+        kwargs = {**cls._constructor_defaults, **kwargs}
+        key = tuple(sorted(kwargs.items()))
+        if key not in cls._cache:
+            cls._cache[key] = super().__call__(**kwargs)
+        return cls._cache[key]
+
+
+class Element(metaclass=InternedMC):
+
+    _constructor_defaults = {
+        "value": ABSENT,
+        "category": None,
+        "capture": None,
+        "tags": frozenset(),
+        "key_field": None,
+    }
+
+    def __init__(self, *, name, value, category, capture, tags, key_field):
+        self.name = name
+        self.value = value
+        self.category = category
+        self.capture = capture
+        self.tags = tags
+        self.key_field = key_field
+        self.focus = 1 in self.tags
 
     def with_focus(self):
         return self.clone(tags=self.tags | frozenset({1}))
@@ -31,7 +50,16 @@ class Element:
         return self.clone(tags=self.tags - frozenset({1}))
 
     def clone(self, **changes):
-        return dc_replace(self, **changes)
+        args = {
+            "name": self.name,
+            "value": self.value,
+            "category": self.category,
+            "capture": self.capture,
+            "tags": self.tags,
+            "key_field": self.key_field,
+            **changes,
+        }
+        return Element(**args)
 
     def all_captures(self):
         if self.capture:
@@ -103,20 +131,33 @@ class Element:
     __repr__ = __str__
 
 
-@dataclass(frozen=True)
-class Call:
-    element: object
-    children: tuple = ()
-    captures: tuple = ()
-    immediate: bool = False
-    collapse: bool = False
+class Call(metaclass=InternedMC):
 
-    @property
-    def focus(self):
-        return any(x.focus for x in self.captures + self.children)
+    _constructor_defaults = {
+        "children": (),
+        "captures": (),
+        "immediate": False,
+        "collapse": False,
+    }
+
+    def __init__(self, *, element, children, captures, immediate, collapse):
+        self.element = element
+        self.children = children
+        self.captures = captures
+        self.immediate = immediate
+        self.collapse = collapse
+        self.focus = any(x.focus for x in self.captures + self.children)
 
     def clone(self, **changes):
-        return dc_replace(self, **changes)
+        args = {
+            "element": self.element,
+            "children": self.children,
+            "captures": self.captures,
+            "immediate": self.immediate,
+            "collapse": self.collapse,
+            **changes,
+        }
+        return Call(**args)
 
     def find_tag(self, tag):
         results = set()
@@ -511,7 +552,7 @@ def _resolve(pattern, env):
     elif isinstance(pattern, Element):
         category = _eval(pattern.category, env)
         if category is not None and not isinstance(category, Category):
-            raise TypeError(f'A pattern can only be a Category.')
+            raise TypeError(f"A pattern can only be a Category.")
         return pattern.clone(category=category)
 
 
@@ -520,7 +561,7 @@ def _to_pattern(pattern, context="root"):
         pattern = parse(pattern)
     if isinstance(pattern, Element):
         pattern = Call(
-            element=Element(None),
+            element=Element(name=None),
             captures=(pattern.with_focus(),),
             immediate=False,
         )

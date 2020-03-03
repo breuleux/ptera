@@ -1,6 +1,6 @@
 import functools
 from collections import defaultdict
-from dataclasses import dataclass, replace as dc_replace
+from dataclasses import dataclass
 
 from .core import Capture, get_names
 from .selector import Element, to_pattern
@@ -120,9 +120,7 @@ class Storage:
                 continue
 
             if role.target.capture is None:
-                role.target = dc_replace(
-                    role.target, capture=self.default_target
-                )
+                role.target = role.target.clone(capture=self.default_target)
 
             names = get_names(fn)
             names = {*names, *[k for k, param in self._key_captures]}

@@ -358,7 +358,7 @@ def test_capture():
 
     assert str(cap) == "Capture(sel(\"!x\"), ['x', 'x'], [1, 2])"
 
-    cap = Capture(Element(None))
+    cap = Capture(Element(name=None))
     with pytest.raises(ValueError):
         cap.name
     cap.acquire("y", 7)
