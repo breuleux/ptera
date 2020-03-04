@@ -10,50 +10,47 @@ from .selfless import Override, Selfless, choose, override
 from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures, setvar
 
 
+_pattern_fit_cache = {}
+
+
 class Frame:
 
     top = ContextVar("Frame.top", default=None)
 
     def __init__(self, fname):
         self.function_name = fname
-        self.accumulators = defaultdict(list)
+        self.accumulators = {}
+        self.getters = {}
         self.to_close = []
-        self.possible_rules = set()
 
     def register(self, acc, captures, close_at_exit):
-        for rulename, rules in acc.rules.items():
-            if rules:
-                self.possible_rules.add(rulename)
         for cap, varnames in captures.items():
             for v in varnames:
-                self.accumulators[v].append((cap, acc))
-        if close_at_exit:
+                self.accumulators.setdefault(v, []).append((cap, acc))
+                if acc.rulename == "value" and cap.focus:
+                    self.getters.setdefault(v, []).append((cap, acc))
+        if close_at_exit and acc.rulename == "listeners":
             self.to_close.append(acc)
 
-    def run(self, method, varname, category, value=ABSENT, mayfail=True):
-        rval = ABSENT
+    def set(self, varname, key, category, value):
         for element, acc in self.accumulators[varname]:
             if acc.status is not ACTIVE:
                 continue
-            acc = acc.match(element, varname, category, value, mayfail=mayfail)
+            acc = acc.match(element, varname, category, value)
             if acc:
-                tmp = getattr(acc, method)(element, varname, category, value)
+                acc.varset(element, varname, category, value)
+
+    def get(self, varname, key, category):
+        rval = ABSENT
+        for element, acc in self.getters[varname]:
+            if acc.status is not ACTIVE:
+                continue
+            acc = acc.match(element, varname, category, ABSENT)
+            if acc:
+                tmp = acc.varget(element, varname, category)
                 if tmp is not ABSENT:
                     rval = tmp
         return rval
-
-    def set(self, varname, key, category, value):
-        if varname not in self.accumulators:
-            return ABSENT
-        if self.possible_rules:
-            self.run("varset", varname, category, value)
-
-    def get(self, varname, key, category):
-        if varname not in self.accumulators:
-            return ABSENT
-        if "value" not in self.possible_rules:
-            return ABSENT
-        return self.run("varget", varname, category, mayfail=False)
 
     def exit(self):
         for acc in self.to_close:
@@ -105,6 +102,8 @@ class Capture:
 class Accumulator:
     def __init__(
         self,
+        *,
+        rulename,
         parent=None,
         rules=None,
         template=True,
@@ -114,11 +113,12 @@ class Accumulator:
         self.pattern = pattern
         self.parent = parent
         self.children = []
-        self.rules = rules or defaultdict(list)
+        self.rules = rules or []
         self.captures = {}
         self.status = ACTIVE
         self.template = template
         self.focus = focus
+        self.rulename = rulename
         if self.parent is not None:
             self.parent.children.append(self)
 
@@ -128,43 +128,31 @@ class Accumulator:
         if element.capture not in self.captures:
             cap = Capture(element)
             self.captures[element.capture] = cap
-        return self.captures[element.capture]
+            return cap
+        else:
+            return self.captures[element.capture]
 
     def fail(self):
         self.status = FAILED
         for leaf in self.leaves():
             leaf.status = FAILED
 
-    def match(self, element, varname, category, value, mayfail=True):
-        assert self.status is ACTIVE
+    def match(self, element, varname, category, value):
         if element.value is ABSENT or element.value == value:
             return self.fork(pattern=element) if element.focus else self
         else:
-            if mayfail:
-                self.fail()
+            self.fail()
             return None
 
     def varset(self, element, varname, category, value):
-        assert self.status is ACTIVE
         cap = self.getcap(element)
         if cap:
             cap.acquire(varname, value)
 
-    def varget(self, element, varname, category, _):
-        assert self.status is ACTIVE
-        if not element.focus:
-            return ABSENT
+    def varget(self, element, varname, category):
         cap = self.getcap(element)
         cap.names.append(varname)
-        rval = self.run("value", may_fail=False)
-        if rval is ABSENT:
-            if len(cap.names) == 1:
-                del self.captures[element.capture]
-            else:
-                cap.names.pop()
-        else:
-            cap.values.append(rval)
-        return rval
+        return self.run_value()
 
     def build(self):
         if self.parent is None:
@@ -176,23 +164,20 @@ class Accumulator:
             curr = curr.parent
         return rval
 
-    def run(self, rulename, may_fail):
-        assert self.status is ACTIVE
+    def run_value(self):
         rval = ABSENT
         args = self.build()
-        for fn in self.rules[rulename]:
-            if may_fail and set(args) != set(get_names(fn)):
-                return ABSENT
-            else:
-                with setvar(PatternCollection.current, None):
-                    rval = fn(**args)
+        for fn in self.rules:
+            rval = fn(**args)
         return rval
 
-    def merge(self, child):
-        for name, cap in child.captures.items():
-            mycap = self.getcap(cap.element)
-            mycap.names += cap.names
-            mycap.values += cap.values
+    def run_listeners(self):
+        args = self.build()
+        for fn in self.rules:
+            if set(args) != set(get_names(fn)):
+                return ABSENT
+            else:
+                fn(**args)
 
     def leaves(self):
         if isinstance(self.pattern, Element) and self.focus:
@@ -212,23 +197,25 @@ class Accumulator:
         return rval
 
     def close(self):
+        assert self.rulename == "listeners"
         if self.status is ACTIVE:
             if self.parent is None:
                 for acc in self._to_merge():
-                    self.merge(acc)
+                    self.captures.update(acc.captures)
                 leaves = self.leaves()
                 for leaf in leaves or [self]:
-                    leaf.run("listeners", may_fail=True)
+                    leaf.run_listeners()
             self.status = COMPLETE
 
     def fork(self, focus=True, pattern=None):
         parent = None if self.template else self
         return Accumulator(
-            parent,
+            parent=parent,
             rules=self.rules,
             template=False,
             pattern=pattern,
             focus=focus,
+            rulename=self.rulename,
         )
 
 
@@ -248,16 +235,17 @@ def dict_to_collection(*rulesets):
         for pattern, triggers in rules.items():
             pattern = to_pattern(pattern)
             for name, entries in triggers.items():
+                key = (name, pattern)
                 if not isinstance(entries, (tuple, list)):
                     entries = [entries]
                 for entry in entries:
-                    if pattern not in tmp:
-                        tmp[pattern] = Accumulator(
-                            pattern=pattern
-                        )
-                    acc = tmp[pattern]
-                    acc.rules[name].append(entry)
-    return PatternCollection(list(tmp.items()))
+                    if key not in tmp:
+                        tmp[key] = Accumulator(rulename=name, pattern=pattern)
+                    acc = tmp[key]
+                    acc.rules.append(entry)
+    return PatternCollection(
+        [(pattern, acc) for (name, pattern), acc in tmp.items()]
+    )
 
 
 def check_element(el, name, category):
@@ -286,8 +274,11 @@ def fits_pattern(pfn, pattern):
 
     for cap in pattern.captures:
         if cap.name is None:
-            varnames = [var for var, ann in fvars.items()
-                        if check_element(cap, var, ann)]
+            varnames = [
+                var
+                for var, ann in fvars.items()
+                if check_element(cap, var, ann)
+            ]
             if not varnames:
                 return False
             capmap[cap] = varnames
@@ -313,17 +304,17 @@ class PatternCollection:
             pattern, acc = to_process.pop()
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
-            if ispf:
-                capmap = fn._match_cache.get(pattern, ABSENT)
-                if capmap is ABSENT:
-                    capmap = fits_pattern(fn, pattern)
-                    fn._match_cache[pattern] = capmap
-            else:
+            cachekey = (fn, pattern)
+            capmap = _pattern_fit_cache.get(cachekey, ABSENT)
+            if capmap is ABSENT:
                 capmap = fits_pattern(fn, pattern)
+                _pattern_fit_cache[cachekey] = capmap
             if capmap is not False:
                 is_template = acc.template
-                acc = acc.fork(focus=pattern.focus or is_template,
-                               pattern=pattern)
+                if pattern.focus or is_template or pattern.hasval:
+                    acc = acc.fork(
+                        focus=pattern.focus or is_template, pattern=pattern
+                    )
                 frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
                     if child.collapse:
@@ -390,7 +381,23 @@ def interact(sym, key, category, __self__, value):
 
     if key is None:
         fr = Frame.top.get()
-        fr_value = fr.get(sym, key, category)
+        if sym not in fr.accumulators:
+            if from_state is ABSENT and not isinstance(value, Override):
+                if value is ABSENT:
+                    raise NameError(f"Variable {sym} of {__self__} is not set.")
+                return value
+            elif value is ABSENT and not isinstance(from_state, Override):
+                return from_state
+            else:
+                success, value = choose([value, from_state])
+                if not success:
+                    raise NameError(f"Variable {sym} of {__self__} is not set.")
+                return value
+
+        if sym in fr.getters:
+            fr_value = fr.get(sym, key, category)
+        else:
+            fr_value = ABSENT
         if (
             value is ABSENT
             and fr_value is ABSENT
@@ -408,6 +415,7 @@ def interact(sym, key, category, __self__, value):
             success, value = choose([value, fr_value, from_state])
         if not success:
             raise NameError(f"Variable {sym} of {__self__} is not set.")
+
         fr.set(sym, key, category, value)
         return value
 

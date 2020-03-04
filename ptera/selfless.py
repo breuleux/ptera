@@ -270,7 +270,7 @@ def transform(fn, interact):
     state = {
         k: override(
             eval(compile(ast.Expression(v), filename, "eval"), glb, glb),
-            priority=-0.5
+            priority=-0.5,
         )
         for k, v in transformer.defaults.items()
     }

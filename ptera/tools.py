@@ -201,9 +201,10 @@ class Configurator:
 
     def __enter__(self):
         def _resolve(arg):
-            return self.resolve(opts.get(arg.name, ABSENT))
+            return opts.get(arg.name, ABSENT)
 
         opts = self.get_options()
+        opts = {name: self.resolve(value) for name, value in opts.items()}
         pattern = to_pattern(f"$arg:##X", env={"##X": self.category})
         self.ov = overlay({pattern: {"value": _resolve}})
         self.ov.__enter__()

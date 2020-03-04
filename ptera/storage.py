@@ -89,8 +89,8 @@ class Storage:
             assert key in self.store
             self.update_queue[key] = call_with_captures(fn, cap, full=role.full)
 
-        wrapped._ptera_argspec = (
-            set(fn._ptera_argspec) | set(k for k, _ in self._key_captures)
+        wrapped._ptera_argspec = set(fn._ptera_argspec) | set(
+            k for k, _ in self._key_captures
         )
         return wrapped
 
@@ -101,8 +101,8 @@ class Storage:
             cap = {**role.make_capture(), **cap}
             return call_with_captures(fn, cap, full=role.full)
 
-        wrapped._ptera_argspec = (
-            set(fn._ptera_argspec) | set(k for k, _ in self._key_captures)
+        wrapped._ptera_argspec = set(fn._ptera_argspec) | set(
+            k for k, _ in self._key_captures
         )
         return wrapped
 

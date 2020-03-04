@@ -42,6 +42,7 @@ class Element(metaclass=InternedMC):
         self.tags = tags
         self.key_field = key_field
         self.focus = 1 in self.tags
+        self.hasval = self.value is not ABSENT
 
     def with_focus(self):
         return self.clone(tags=self.tags | frozenset({1}))
@@ -147,6 +148,7 @@ class Call(metaclass=InternedMC):
         self.immediate = immediate
         self.collapse = collapse
         self.focus = any(x.focus for x in self.captures + self.children)
+        self.hasval = any(x.hasval for x in self.captures + self.children)
 
     def clone(self, **changes):
         args = {
