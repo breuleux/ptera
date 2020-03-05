@@ -370,9 +370,9 @@ class overlay:
 
 
 def interact(sym, key, category, __self__, value):
-    from_state = getattr(__self__.state_obj, sym, ABSENT)
 
     if key is None:
+        from_state = getattr(__self__.state_obj, sym, ABSENT)
         fr = Frame.top.get()
         if sym not in fr.accumulators:
             if from_state is ABSENT and not isinstance(value, Override):
@@ -382,10 +382,7 @@ def interact(sym, key, category, __self__, value):
             elif value is ABSENT and not isinstance(from_state, Override):
                 return from_state
             else:
-                success, value = choose([value, from_state])
-                if not success:
-                    raise NameError(f"Variable {sym} of {__self__} is not set.")
-                return value
+                return choose([value, from_state])
 
         if sym in fr.getters:
             fr_value = fr.get(sym, key, category)
@@ -397,16 +394,15 @@ def interact(sym, key, category, __self__, value):
             and not isinstance(from_state, Override)
         ):
             value = from_state
-            success = value is not ABSENT
         elif (
             fr_value is ABSENT
             and from_state is ABSENT
             and not isinstance(value, Override)
         ):
-            success = value is not ABSENT
+            pass
         else:
-            success, value = choose([value, fr_value, from_state])
-        if not success:
+            value = choose([value, fr_value, from_state])
+        if value is ABSENT:
             raise NameError(f"Variable {sym} of {__self__} is not set.")
 
         if sym in fr.setters:
@@ -414,20 +410,14 @@ def interact(sym, key, category, __self__, value):
         return value
 
     else:
+        # TODO: it is not clear at the moment in what circumstance value may be
+        # ABSENT
         assert value is not ABSENT
         with proceed(sym):
             interact("#key", None, None, __self__, key)
             # TODO: merge the return value of interact (currently raises
             # ConflictError)
             interact("#value", None, category, __self__, value)
-            if value is ABSENT and not isinstance(from_state, Override):
-                return from_state
-            elif from_state is ABSENT and not isinstance(value, Override):
-                return value
-            success, value = choose([value, from_state])
-            # TODO: it is not clear at the moment in what circumstance
-            # success may fail to be true
-            assert success
             return value
 
 

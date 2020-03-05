@@ -222,6 +222,8 @@ def test_missing_var():
     with pytest.raises(NameError):
         mystery(3)
 
+    with pytest.raises(NameError):
+        mystery.tweak({"mystery{hat=10} > surprise": 0})(3)
 
 def test_tap_map():
     rval, acoll = double_brie.using("brie{!a, b}")(2, 10)
