@@ -144,10 +144,10 @@ def train():
     def hits(output, target):
         return (output.max(dim=1).indices == target).sum()
 
-    # @my_step.on(Grad("step{!!loss} >> $param:cat.Learnable"))
-    # def update(param):
-    #     param_value, param_grad = param
-    #     param_value.data.sub_(lr * param_grad)
+    @my_step.on(Grad("step{!!loss} >> $param:cat.Learnable"))
+    def update(param):
+        param_value, param_grad = param
+        param_value.data.add_(param_grad, alpha=-lr)
 
     if weight_stats:
 
