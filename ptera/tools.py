@@ -200,13 +200,16 @@ class Configurator:
         return opts
 
     def __enter__(self):
-        def _resolve(arg):
-            return opts.get(arg.name, ABSENT)
+        def _resolver(value):
+            return lambda **_: value
 
         opts = self.get_options()
         opts = {name: self.resolve(value) for name, value in opts.items()}
-        pattern = to_pattern(f"$arg:##X", env={"##X": self.category})
-        self.ov = overlay({pattern: {"value": _resolve}})
+        self.ov = overlay({
+            to_pattern(f"{name}:##X", env={"##X": self.category}):
+                {"value": _resolver(value)}
+            for name, value in opts.items()
+        })
         self.ov.__enter__()
         return self
 

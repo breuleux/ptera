@@ -1,6 +1,6 @@
 import functools
 import inspect
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextvars import ContextVar
 from copy import copy
 
@@ -19,34 +19,31 @@ class Frame:
 
     def __init__(self, fname):
         self.function_name = fname
-        self.accumulators = {}
+        self.accumulators = set()
         self.getters = {}
+        self.setters = {}
         self.to_close = []
 
     def register(self, acc, captures, close_at_exit):
         for cap, varnames in captures.items():
             for v in varnames:
-                self.accumulators.setdefault(v, []).append((cap, acc))
+                self.accumulators.add(v)
                 if acc.rulename == "value" and cap.focus:
                     self.getters.setdefault(v, []).append((cap, acc))
+                else:
+                    self.setters.setdefault(v, []).append((cap, acc))
         if close_at_exit and acc.rulename == "listeners":
             self.to_close.append(acc)
 
     def set(self, varname, key, category, value):
-        for element, acc in self.accumulators[varname]:
-            if acc.status is not ACTIVE:
-                continue
-            acc = acc.match(element, varname, category, value)
-            if acc:
+        for element, acc in self.setters[varname]:
+            if acc.status is ACTIVE:
                 acc.varset(element, varname, category, value)
 
     def get(self, varname, key, category):
         rval = ABSENT
         for element, acc in self.getters[varname]:
-            if acc.status is not ACTIVE:
-                continue
-            acc = acc.match(element, varname, category, ABSENT)
-            if acc:
+            if acc.status is ACTIVE:
                 tmp = acc.varget(element, varname, category)
                 if tmp is not ABSENT:
                     rval = tmp
@@ -137,22 +134,22 @@ class Accumulator:
         for leaf in self.leaves():
             leaf.status = FAILED
 
-    def match(self, element, varname, category, value):
+    def varset(self, element, varname, category, value):
         if element.value is ABSENT or element.value == value:
-            return self.fork(pattern=element) if element.focus else self
+            acc = self.fork(pattern=element) if element.focus else self
+            cap = acc.getcap(element)
+            if cap:
+                cap.acquire(varname, value)
         else:
             self.fail()
-            return None
-
-    def varset(self, element, varname, category, value):
-        cap = self.getcap(element)
-        if cap:
-            cap.acquire(varname, value)
 
     def varget(self, element, varname, category):
-        cap = self.getcap(element)
+        cap = Capture(element)
+        self.captures[element.capture] = cap
         cap.names.append(varname)
-        return self.run_value()
+        rval = self.run_value()
+        del self.captures[element.capture]
+        return rval
 
     def build(self):
         if self.parent is None:
@@ -298,15 +295,15 @@ class PatternCollection:
 
     def proceed(self, fn, frame):
         ispf = isinstance(fn, PteraFunction)
-        next_patterns = []
-        to_process = list(self.patterns)
+        next_patterns = deque()
+        to_process = deque(self.patterns)
         while to_process:
             pattern, acc = to_process.pop()
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
             cachekey = (fn, pattern)
-            capmap = _pattern_fit_cache.get(cachekey, ABSENT)
-            if capmap is ABSENT:
+            capmap = _pattern_fit_cache.get(cachekey)
+            if capmap is None:
                 capmap = fits_pattern(fn, pattern)
                 _pattern_fit_cache[cachekey] = capmap
             if capmap is not False:
@@ -367,7 +364,7 @@ class overlay:
             collection = dict_to_collection(*self.rulesets)
             curr = PatternCollection.current.get()
             if curr is not None:
-                collection.patterns = curr.patterns + collection.patterns
+                collection.patterns = [*curr.patterns, *collection.patterns]
             self.reset = PatternCollection.current.set(collection)
             return collection
 
@@ -416,7 +413,8 @@ def interact(sym, key, category, __self__, value):
         if not success:
             raise NameError(f"Variable {sym} of {__self__} is not set.")
 
-        fr.set(sym, key, category, value)
+        if sym in fr.setters:
+            fr.set(sym, key, category, value)
         return value
 
     else:
