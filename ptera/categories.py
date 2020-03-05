@@ -1,6 +1,3 @@
-from .utils import ABSENT
-
-
 def _merge(a, b):
     members = set()
     members.update(a.members if isinstance(a, CategorySet) else {a})

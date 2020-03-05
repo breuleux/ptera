@@ -1,14 +1,13 @@
 import functools
 import inspect
-from collections import defaultdict, deque
+from collections import deque
 from contextvars import ContextVar
 from copy import copy
 
 from .categories import match_category
 from .selector import Element, to_pattern
 from .selfless import Override, Selfless, choose, override
-from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures, setvar
-
+from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, call_with_captures
 
 _pattern_fit_cache = {}
 
@@ -294,8 +293,7 @@ class PatternCollection:
         self.patterns = patterns or []
 
     def proceed(self, fn, frame):
-        ispf = isinstance(fn, PteraFunction)
-        next_patterns = deque()
+        next_patterns = []
         to_process = deque(self.patterns)
         while to_process:
             pattern, acc = to_process.pop()
@@ -364,7 +362,7 @@ class overlay:
             collection = dict_to_collection(*self.rulesets)
             curr = PatternCollection.current.get()
             if curr is not None:
-                collection.patterns = [*curr.patterns, *collection.patterns]
+                collection.patterns = curr.patterns + collection.patterns
             self.reset = PatternCollection.current.set(collection)
             return collection
 

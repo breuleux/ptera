@@ -205,11 +205,14 @@ class Configurator:
 
         opts = self.get_options()
         opts = {name: self.resolve(value) for name, value in opts.items()}
-        self.ov = overlay({
-            to_pattern(f"{name}:##X", env={"##X": self.category}):
-                {"value": _resolver(value)}
-            for name, value in opts.items()
-        })
+        self.ov = overlay(
+            {
+                to_pattern(f"{name}:##X", env={"##X": self.category}): {
+                    "value": _resolver(value)
+                }
+                for name, value in opts.items()
+            }
+        )
         self.ov.__enter__()
         return self
 

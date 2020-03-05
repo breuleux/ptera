@@ -4,7 +4,6 @@
 import ast
 import builtins
 import sys
-from dataclasses import dataclass, replace as dc_replace
 
 from . import opparse
 from .categories import Category

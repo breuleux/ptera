@@ -1,6 +1,6 @@
-from types import FunctionType
 import functools
 import inspect
+from types import FunctionType
 
 
 class Named:
