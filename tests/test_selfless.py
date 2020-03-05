@@ -1,6 +1,13 @@
 import pytest
 
-from ptera.selfless import ConflictError, override, Override, choose, default, selfless
+from ptera.selfless import (
+    ConflictError,
+    Override,
+    choose,
+    default,
+    override,
+    selfless,
+)
 
 from .common import one_test_per_assert
 
