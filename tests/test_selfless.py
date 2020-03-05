@@ -1,6 +1,6 @@
 import pytest
 
-from ptera.selfless import ConflictError, Override, default, selfless
+from ptera.selfless import ConflictError, override, Override, choose, default, selfless
 
 from .common import one_test_per_assert
 
@@ -112,21 +112,33 @@ def test_state_unset_variables():
         iceberg.state.z
 
 
+def test_override():
+    ov1 = override(1, priority=1)
+    ov2 = override(2, priority=2)
+    ov3 = override(3, priority=3)
+
+    assert choose([ov1, ov2, ov3]) == (True, 3)
+
+    ov1x = override(ov1)
+    assert ov1x.value == 1
+    assert ov1x.priority == 1
+
+
 def test_override_return_value():
     with pytest.raises(ConflictError):
         chocolat.new(rval=1234)(2, 3)
 
-    assert chocolat.new(rval=Override(1234))(2, 3) == 1234
+    assert chocolat.new(rval=override(1234))(2, 3) == 1234
 
 
 def test_override_arguments():
     with pytest.raises(ConflictError):
         chocolat.new(x=2, y=3)(4)
     assert chocolat.new(x=default(2), y=3)(4) == 49
-    assert chocolat.new(x=Override(2), y=3)(4) == 25
+    assert chocolat.new(x=override(2), y=3)(4) == 25
     with pytest.raises(ConflictError):
-        chocolat.new(x=Override(2), y=3)(Override(4))
-    assert chocolat.new(x=Override(2), y=3)(Override(4, priority=2)) == 49
+        chocolat.new(x=override(2), y=3)(override(4))
+    assert chocolat.new(x=override(2), y=3)(override(4, priority=2)) == 49
 
 
 def test_vardoc_and_ann():
@@ -142,8 +154,8 @@ def spatula(x):
 
 def test_tuple_assignment():
     assert spatula((4, 5)) == 9
-    assert spatula.new(a=Override(70))((4, 5)) == 75
-    assert spatula.new(b=Override(70))((4, 5)) == 74
+    assert spatula.new(a=override(70))((4, 5)) == 75
+    assert spatula.new(b=override(70))((4, 5)) == 74
 
 
 def test_nested_function():

@@ -149,9 +149,7 @@ class Configurator:
         self.default_config_file = default_config_file
 
     def resolve(self, arg):
-        if arg is ABSENT:
-            return arg
-        elif not isinstance(arg, str):
+        if not isinstance(arg, str):
             return arg
         elif arg in ("True", "False", "None"):
             return eval(arg)

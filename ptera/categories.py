@@ -28,9 +28,6 @@ class CategorySet:
     def __eq__(self, other):
         return isinstance(other, CategorySet) and other.members == self.members
 
-    def __hash__(self):
-        return hash(self.members)
-
     def __repr__(self):
         return "&".join(sorted(map(str, self.members)))
 

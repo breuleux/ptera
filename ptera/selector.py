@@ -519,7 +519,7 @@ def _find_eval_env(s, fr):
         lineno = _find_string(s, filename)
         if lineno is not None:
             if ev is not None:
-                if ev[0] != filename:
+                if ev[0] != filename:  # pragma: no cover
                     raise Exception(f"Ambiguous env for selector '{s}'")
             ev = (filename, fr.f_globals)
         fr = fr.f_back

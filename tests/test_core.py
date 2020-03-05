@@ -121,6 +121,11 @@ def test_patterns():
     # Inexistent category
     assert _dbrie("brie > $x:cat.Xylophone") == []
 
+    # Filter on value
+    assert _dbrie("brie{!x, y, a=4}") == [{"x": [2], "y": [3]}]
+    assert _dbrie("double_brie{x1=2} > brie > x") == [{"x": [2]}, {"x": [10]}]
+    assert _dbrie("double_brie{#value=1234} > brie > x") == []
+
 
 @ptera
 def snapple(x):
