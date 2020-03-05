@@ -16,8 +16,7 @@ class Frame:
 
     top = ContextVar("Frame.top", default=None)
 
-    def __init__(self, fname):
-        self.function_name = fname
+    def __init__(self):
         self.accumulators = set()
         self.getters = {}
         self.setters = {}
@@ -51,6 +50,9 @@ class Frame:
     def exit(self):
         for acc in self.to_close:
             acc.close()
+
+
+_empty_frame = Frame()
 
 
 class Capture:
@@ -292,7 +294,8 @@ class PatternCollection:
     def __init__(self, patterns=None):
         self.patterns = patterns or []
 
-    def proceed(self, fn, frame):
+    def proceed(self, fn):
+        frame = _empty_frame
         next_patterns = []
         to_process = deque(self.patterns)
         while to_process:
@@ -310,6 +313,8 @@ class PatternCollection:
                     acc = acc.fork(
                         focus=pattern.focus or is_template, pattern=pattern
                     )
+                if frame is _empty_frame:
+                    frame = Frame()
                 frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
                     if child.collapse:
@@ -317,18 +322,7 @@ class PatternCollection:
                     else:
                         next_patterns.append((child, acc))
         rval = PatternCollection(next_patterns)
-        return rval
-
-
-class newframe:
-    def __enter__(self):
-        self.frame = Frame(None)
-        self.reset = Frame.top.set(self.frame)
-        return self.frame
-
-    def __exit__(self, typ, exc, tb):
-        Frame.top.reset(self.reset)
-        self.frame.exit()
+        return frame, rval
 
 
 class proceed:
@@ -337,17 +331,21 @@ class proceed:
 
     def __enter__(self):
         self.curr = PatternCollection.current.get()
-        frame = Frame.top.get()
         if self.curr is None:
+            self.frame = _empty_frame
+            self.frame_reset = Frame.top.set(self.frame)
             return None
         else:
-            new = self.curr.proceed(self.fn, frame)
-        self.reset = PatternCollection.current.set(new)
-        return new
+            self.frame, new = self.curr.proceed(self.fn)
+            self.frame_reset = Frame.top.set(self.frame)
+            self.reset = PatternCollection.current.set(new)
+            return new
 
     def __exit__(self, typ, exc, tb):
         if self.curr is not None:
             PatternCollection.current.reset(self.reset)
+        Frame.top.reset(self.frame_reset)
+        self.frame.exit()
 
 
 class overlay:
@@ -417,21 +415,20 @@ def interact(sym, key, category, __self__, value):
 
     else:
         assert value is not ABSENT
-        with newframe():
-            with proceed(sym):
-                interact("#key", None, None, __self__, key)
-                # TODO: merge the return value of interact (currently raises
-                # ConflictError)
-                interact("#value", None, category, __self__, value)
-                if value is ABSENT and not isinstance(from_state, Override):
-                    return from_state
-                elif from_state is ABSENT and not isinstance(value, Override):
-                    return value
-                success, value = choose([value, from_state])
-                # TODO: it is not clear at the moment in what circumstance
-                # success may fail to be true
-                assert success
+        with proceed(sym):
+            interact("#key", None, None, __self__, key)
+            # TODO: merge the return value of interact (currently raises
+            # ConflictError)
+            interact("#value", None, category, __self__, value)
+            if value is ABSENT and not isinstance(from_state, Override):
+                return from_state
+            elif from_state is ABSENT and not isinstance(value, Override):
                 return value
+            success, value = choose([value, from_state])
+            # TODO: it is not clear at the moment in what circumstance
+            # success may fail to be true
+            assert success
+            return value
 
 
 class Collector:
@@ -647,11 +644,10 @@ class PteraFunction(Selfless):
         for plugin in plugins.values():
             rulesets.append(plugin.rules())
         with overlay(*rulesets):
-            with newframe():
-                with proceed(self):
-                    if self.callkey is not None:
-                        interact("#key", None, None, self, self.callkey)
-                    rval = super().__call__(*args, **kwargs)
+            with proceed(self):
+                if self.callkey is not None:
+                    interact("#key", None, None, self, self.callkey)
+                rval = super().__call__(*args, **kwargs)
 
         callres = CallResults(rval)
         for name, plugin in plugins.items():
