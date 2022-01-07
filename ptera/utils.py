@@ -1,6 +1,4 @@
 import functools
-import inspect
-from types import FunctionType
 
 
 class Named:
@@ -48,25 +46,6 @@ def keyword_decorator(deco):
             return deco(fn, **kwargs)
 
     return new_deco
-
-
-def call_with_captures(fn, captures, full=True):
-    # TODO: merge with get_names
-    if not hasattr(fn, "_ptera_argnames"):
-        args = inspect.getfullargspec(fn)
-        assert not args.varkw
-        args = args.args + args.kwonlyargs
-        if isinstance(fn, FunctionType):
-            fn._ptera_argnames = args
-    else:
-        args = fn._ptera_argnames
-    kwargs = {}
-    for k in args:
-        if k != "self":
-            kwargs[k] = captures[k]
-    if not full:
-        kwargs = {k: v.value for k, v in kwargs.items()}
-    return fn(**kwargs)
 
 
 class autocreate:

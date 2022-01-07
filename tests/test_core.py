@@ -46,9 +46,9 @@ class GrabAll:
         self.results = []
         pattern = select(pattern)
 
-        def listener(**kwargs):
+        def listener(args):
             self.results.append(
-                {name: cap.values for name, cap in kwargs.items()}
+                {name: cap.values for name, cap in args.items()}
             )
 
         self.rules = {pattern: {"listeners": listener}}
@@ -240,11 +240,11 @@ def test_function_indexing():
 
 def test_immediate_evaluation():
     # This uses a GetterAccumulator
-    ss = superbrie.rewriting({"superbrie(k=7) > brie > x": (lambda: 0)})
+    ss = superbrie.rewriting({"superbrie(k=7) > brie > x": (lambda args: 0)})
     assert ss(10) == 328701
 
     # This uses a GetterAccumulator
-    ss = superbrie.rewriting({"superbrie(i=9) > brie > x": (lambda: 0)})
+    ss = superbrie.rewriting({"superbrie(i=9) > brie > x": (lambda args: 0)})
     assert ss(10) == 239365
 
     # By default this uses a TotalAccumulator, which requires every
@@ -287,11 +287,11 @@ def mystery(hat):
 
 
 def test_provide_var():
-    with BaseOverlay({"mystery(!surprise)": {"value": lambda surprise: 4}}):
+    with BaseOverlay({"mystery(!surprise)": {"value": lambda _: 4}}):
         assert mystery(10) == 40
 
     with BaseOverlay(
-        {"mystery(hat, !surprise)": {"value": lambda hat, surprise: hat.value}}
+        {"mystery(hat, !surprise)": {"value": lambda args: args["hat"].value}}
     ):
         assert mystery(8) == 64
 
@@ -313,9 +313,8 @@ def test_tap_map():
     rval, acoll = double_brie.full_tapping("brie(!a, b)")(2, 10)
     assert acoll.map("a") == [4, 100]
     assert acoll.map("b") == [9, 121]
-    assert acoll.map(lambda a, b: a + b) == [13, 221]
+    assert acoll.map(lambda args: args["a"] + args["b"]) == [13, 221]
     assert acoll.map() == [{"a": 4, "b": 9}, {"a": 100, "b": 121}]
-    assert acoll.map(lambda **kwargs: kwargs["a"] + kwargs["b"]) == [13, 221]
 
 
 def test_tap_map_all():
@@ -334,23 +333,31 @@ def test_tap_map_named():
 
 def test_tap_map_full():
     rval, acoll = double_brie.using("brie > $param:tag.Bouffe")(2, 10)
-    assert acoll.map_full(lambda param: param.value) == [4, 9, 100, 121]
-    assert acoll.map_full(lambda param: param.name) == ["a", "b", "a", "b"]
+    assert acoll.map_full(lambda args: args["param"].value) == [4, 9, 100, 121]
+    assert acoll.map_full(lambda args: args["param"].name) == [
+        "a",
+        "b",
+        "a",
+        "b",
+    ]
 
 
 def test_on():
     dbrie = double_brie.clone(return_object=True)
 
     @dbrie.on("brie > x")
-    def minx(x):
+    def minx(args):
+        x = args["x"]
         return -x
 
     @dbrie.on("brie > x", all=True)
-    def minx_all(x):
+    def minx_all(args):
+        x = args["x"]
         return [-v for v in x]
 
     @dbrie.on("brie > x", full=True)
-    def minx_full(x):
+    def minx_full(args):
+        x = args["x"]
         assert x.name == "x"
         return -x.value
 
@@ -385,7 +392,7 @@ def test_tweak():
 
 def test_rewrite():
     dbrie = double_brie.clone()
-    dbrie.rewrite({"brie(x, !y)": lambda x: x})
+    dbrie.rewrite({"brie(x, !y)": lambda args: args["x"]})
     assert dbrie(2, 10) == 210
 
 
@@ -442,7 +449,9 @@ def test_readme():
     result = sumsquares.tweaking({"square > rval": 0})(3, 4)
     assert result == 0
 
-    result = sumsquares.rewriting({"square(x) > rval": lambda x: x + 1})(3, 4)
+    result = sumsquares.rewriting(
+        {"square(x) > rval": lambda args: args["x"] + 1}
+    )(3, 4)
     assert result == 9
 
 
@@ -494,8 +503,8 @@ def fruitcake():
     my_cake = cake.new(flavour="fruit").clone(return_object=True)
 
     @my_cake.on("flavour")
-    def yum(flavour):
-        return flavour * 2
+    def yum(args):
+        return args["flavour"] * 2
 
     return my_cake()
 
@@ -586,11 +595,14 @@ def test_overlay():
     ov.tweak({"surprise": 2})
 
     @ov.on("mystery > hat")
-    def hats(hat):
+    def hats(args):
+        hat = args["hat"]
         return hat * hat
 
     @ov.on("mystery(hat) > surprise")
-    def shats(surprise, hat):
+    def shats(args):
+        surprise = args["surprise"]
+        hat = args["hat"]
         return (surprise, hat)
 
     with ov as results:

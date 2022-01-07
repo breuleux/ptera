@@ -199,7 +199,7 @@ class Probe(SourceProxy):
     # Context manager #
     ###################
 
-    def _emit(self, **data):
+    def _emit(self, data):
         """Emit data on the stream.
 
         This is used internally.

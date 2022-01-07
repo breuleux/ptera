@@ -8,14 +8,7 @@ from copy import copy
 from .selector import Element, MatchFunction, select
 from .selfless import Override, Selfless, choose, name_error, override
 from .tags import match_tag
-from .utils import (
-    ABSENT,
-    ACTIVE,
-    COMPLETE,
-    FAILED,
-    autocreate,
-    call_with_captures,
-)
+from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, autocreate
 
 _pattern_fit_cache = {}
 
@@ -223,7 +216,7 @@ class TotalAccumulator(BaseAccumulator):
             if set(args) != self.names:
                 return ABSENT
             else:
-                fn(**args)
+                fn(args)
 
     def close(self):
         if self.status is ACTIVE:
@@ -261,7 +254,7 @@ class ImmediateAccumulator(BaseAccumulator):
         if args is None:
             return ABSENT
         for fn in self.rules:
-            rval = fn(**args)
+            rval = fn(args)
         return rval
 
 
@@ -528,14 +521,14 @@ class Collector:
 
         if self.mapper:
 
-            def listener(**kwargs):
-                result = self.mapper(**kwargs)
+            def listener(kwargs):
+                result = self.mapper(kwargs)
                 if result is not None:
                     self.data.append(result)
 
         else:
 
-            def listener(**kwargs):
+            def listener(kwargs):
                 self.data.append(kwargs)
 
         self._listener = listener
@@ -558,7 +551,7 @@ class Collector:
         else:
             assert len(args) == 1
             (fn,) = args
-            return [fn(**entry) for entry in transform_all(self)]
+            return [fn(entry) for entry in transform_all(self)]
 
     def map(self, *args):
         return self._map_helper(
@@ -673,7 +666,7 @@ class Overlay:
 
     def tweak(self, values, priority=2):
         values = {
-            select(k): lambda __v=v, **_: override(__v, priority)
+            select(k): lambda _, _v=v: override(_v, priority)
             for k, v in values.items()
         }
         self.plugins[f"#{len(self.plugins)}"] = StateOverlay(values)
@@ -682,10 +675,10 @@ class Overlay:
     def rewrite(self, values, full=False, priority=2):
         def _wrapfn(fn, full=True):
             @functools.wraps(fn)
-            def newfn(**kwargs):
-                return override(
-                    call_with_captures(fn, kwargs, full=full), priority=priority
-                )
+            def newfn(args):
+                if not full:
+                    args = {k: v.value for k, v in args.items()}
+                return override(fn(args), priority=priority)
 
             return newfn
 
@@ -725,12 +718,12 @@ class Overlay:
         plugin = _to_plugin(query, immediate=immediate)
 
         def deco(fn):
-            def mapper(**kwargs):
+            def mapper(args):
                 if all:
-                    kwargs = {key: cap.values for key, cap in kwargs.items()}
+                    args = {key: cap.values for key, cap in args.items()}
                 elif not full:
-                    kwargs = {key: cap.value for key, cap in kwargs.items()}
-                return fn(**kwargs)
+                    args = {key: cap.value for key, cap in args.items()}
+                return fn(args)
 
             self.plugins[fn.__name__] = plugin.hook(mapper)
 
