@@ -3,6 +3,8 @@ import sys
 import pytest
 import rx
 
+from ptera import tooled
+from ptera.core import BaseOverlay
 from ptera.probe import global_probe, probing
 
 from .milk import cheese as ch, gouda
@@ -279,3 +281,43 @@ def test_probing_no_arguments():
     with pytest.raises(TypeError):
         with probing():
             pass
+
+
+@tooled
+def fT(x):
+    a: "@flag" = x * x  # type: ignore
+    return a + 1
+
+
+def test_probe_in_overlay():
+    results = []
+
+    def listener(args):
+        results.append({name: cap.values for name, cap in args.items()})
+
+    with BaseOverlay({"fT > a": {"listeners": listener}}):
+        fT(5)
+        with probing("fT > a") as probe:
+            results2 = probe.accum()
+            fT(6)
+        fT(7)
+
+    assert results == [{"a": [25]}, {"a": [36]}, {"a": [49]}]
+    assert results2 == [{"a": 36}]
+
+
+def test_overlay_in_probe():
+    results = []
+
+    def listener(args):
+        results.append({name: cap.values for name, cap in args.items()})
+
+    with probing("fT > a") as probe:
+        results2 = probe.accum()
+        fT(5)
+        with BaseOverlay({"fT > a": {"listeners": listener}}):
+            fT(6)
+        fT(7)
+
+    assert results == [{"a": [36]}]
+    assert results2 == [{"a": 25}, {"a": 36}, {"a": 49}]

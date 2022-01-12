@@ -3,7 +3,7 @@ import inspect
 
 from giving import SourceProxy
 
-from .core import dict_to_pattern_list, global_patterns
+from .core import BaseOverlay
 from .deco import tooled
 from .selector import select
 from .selfless import override
@@ -97,7 +97,7 @@ class Probe(SourceProxy):
                 select(selector, env_wrapper=make_resolver)
                 for selector in selectors
             ]
-            self._patterns = dict_to_pattern_list(
+            self._ol = BaseOverlay(
                 {sel: {"value": self._emit} for sel in self._selectors}
             )
             self._raw = raw
@@ -218,11 +218,11 @@ class Probe(SourceProxy):
 
         self._activated = True
         global_probes.add(self)
-        global_patterns.extend(self._patterns)
+        self._ol.__enter__()
         return self
 
     def _exit(self):
-        global_patterns.remove_all(self._patterns)
+        self._ol.__exit__(None, None, None)
         global_probes.remove(self)
 
 

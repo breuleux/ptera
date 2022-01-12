@@ -395,15 +395,12 @@ class PatternCollection:
         return frame, rval
 
 
-global_patterns = PatternCollection([])
-
-
 class proceed:
     def __init__(self, fn):
         self.fn = fn
 
     def __enter__(self):
-        self.curr = PatternCollection.current.get() or global_patterns
+        self.curr = PatternCollection.current.get() or PatternCollection([])
         self.frame, new = self.curr.proceed(self.fn)
         self.frame_reset = Frame.top.set(self.frame)
         self.reset = PatternCollection.current.set(new)
