@@ -131,6 +131,16 @@ class ExternalVariableCollector(NodeVisitor):
             self.provenance[node.name] = "body"
             self.assigned.add(node.name)
 
+    def visit_Import(self, node):
+        self.visit_ImportFrom(node)
+
+    def visit_ImportFrom(self, node):
+        for alias in node.names:
+            name = alias.asname or alias.name
+            name = name.split(".")[0]
+            self.provenance[name] = "body"
+            self.assigned.add(name)
+
     def visit_arg(self, node):
         if node.lineno in self.comments:
             self.vardoc[node.arg] = self.comments[node.lineno]
@@ -459,6 +469,39 @@ class PteraTransformer(NodeTransformer):
             return accum
         else:
             return self.make_interaction(target, None, node.value, orig=node)
+
+    def visit_Import(self, node):
+        """Rewrite an import statement.
+
+        Before::
+            import kangaroo
+
+        After::
+            import kangaroo
+            kangaroo = _ptera_interact('kangaroo', None, kangaroo)
+        """
+        return self.visit_ImportFrom(node)
+
+    def visit_ImportFrom(self, node):
+        """Rewrite an import statement.
+
+        Before::
+            from kangaroo import jump
+
+        After::
+            from kangaroo import jump
+            jump = _ptera_interact('jump', None, jump)
+        """
+        stmts = [node]
+        for alias in node.names:
+            name = alias.asname or alias.name
+            if "." not in name:
+                name_node = ast.copy_location(
+                    ast.Name(id=name, context=ast.Load()),
+                    node,
+                )
+                stmts.extend(self.generate_interactions(name_node))
+        return stmts
 
 
 class Conformer:

@@ -726,6 +726,38 @@ def test_redirect_global():
     assert old_exposure is exposure
 
 
+def test_import_inside():
+    from ptera import tools as T_orig
+
+    @tooled
+    def imp(x):
+        import ptera.tools  # noqa
+        import ptera.tools as T
+
+        return T.gt(3)(x)
+
+    res, gts = imp.using("imp > T")(8)
+    assert res
+    assert gts.map("T") == [T_orig]
+
+
+def test_import_from_inside():
+    from ptera.tools import gt as gt_orig, lt as lt_orig
+
+    @tooled
+    def imp(x):
+        from ptera.tools import gt
+
+        return gt(3)(x)
+
+    res, gts = imp.using("imp > gt")(8)
+    assert res
+    assert gts.map("gt") == [gt_orig]
+
+    res = imp.tweaking({"imp > gt": lt_orig})(8)
+    assert not res
+
+
 def broccoli(n):
     factor = 2
     a = n * factor
