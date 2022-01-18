@@ -348,12 +348,6 @@ class PatternCollection:
     def __init__(self, patterns=None):
         self.patterns = list(patterns or [])
 
-    def extend(self, patterns):
-        self.patterns += patterns
-
-    def remove_all(self, patterns):
-        self.patterns = [p for p in self.patterns if p not in patterns]
-
     def proceed(self, fn):
         frame = _empty_frame
         next_patterns = []
