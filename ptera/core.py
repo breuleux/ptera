@@ -113,16 +113,16 @@ class BaseAccumulator:
     def __init__(
         self,
         *,
+        pattern,
+        func,
         parent=None,
-        rules=None,
         template=True,
-        pattern=None,
         focus=True,
     ):
         self.pattern = pattern
         self.parent = parent
         self.children = []
-        self.rules = rules or []
+        self.func = func
         self.captures = {}
         self.status = ACTIVE
         self.template = template
@@ -137,7 +137,7 @@ class BaseAccumulator:
         parent = None if self.template else self
         return type(self)(
             parent=parent,
-            rules=self.rules,
+            func=self.func,
             template=False,
             pattern=pattern,
             focus=focus,
@@ -212,11 +212,10 @@ class TotalAccumulator(BaseAccumulator):
 
     def run(self):
         args = self.build()
-        for fn in self.rules:
-            if set(args) != self.names:
-                return ABSENT
-            else:
-                fn(args)
+        if set(args) != self.names:
+            return ABSENT
+        else:
+            return self.func(args)
 
     def close(self):
         if self.status is ACTIVE:
@@ -253,8 +252,7 @@ class ImmediateAccumulator(BaseAccumulator):
         args = self.build()
         if args is None:
             return ABSENT
-        for fn in self.rules:
-            rval = fn(args)
+        rval = self.func(args)
         return rval
 
 
@@ -286,26 +284,20 @@ accumulator_classes = {
 }
 
 
-def dict_to_pattern_list(*rulesets):
-    tmp = {}
+def iterate_pattern_dict(*rulesets):
     for rules in rulesets:
         for pattern, triggers in rules.items():
             pattern = select(pattern)
             for name, entries in triggers.items():
-                key = (name, pattern)
                 if not isinstance(entries, (tuple, list)):
                     entries = [entries]
                 for entry in entries:
-                    if key not in tmp:
-                        tmp[key] = accumulator_classes[name](pattern=pattern)
-                    acc = tmp[key]
-                    acc.rules.append(entry)
-
-    return [(pattern, acc) for (name, pattern), acc in tmp.items()]
+                    acc = accumulator_classes[name](pattern=pattern, func=entry)
+                    yield (pattern, acc)
 
 
 def dict_to_collection(*rulesets):
-    return PatternCollection(dict_to_pattern_list(*rulesets))
+    return PatternCollection(iterate_pattern_dict(*rulesets))
 
 
 def check_element(el, name, category):
@@ -354,7 +346,7 @@ class PatternCollection:
     current = ContextVar("PatternCollection.current", default=None)
 
     def __init__(self, patterns=None):
-        self.patterns = patterns or []
+        self.patterns = list(patterns or [])
 
     def extend(self, patterns):
         self.patterns += patterns
