@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from copy import copy
 
 from .selector import Element, MatchFunction, select
-from .selfless import Override, Selfless, choose, name_error, override
+from .selfless import Override, choose, name_error, override
 from .tags import match_tag
 from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, autocreate
 
@@ -317,7 +317,7 @@ def fits_pattern(pfn, pattern):
     else:
         fname = pfn.origin
         fcat = pfn.fn.__annotations__.get("return", None)
-        fvars = pfn.state_obj.__info__
+        fvars = pfn.state_obj
 
     if not check_element(pattern.element, fname, fcat):
         return False
@@ -729,7 +729,7 @@ class Overlay:
             setattr(self._results, name, plugin.finalize())
 
 
-class PteraFunction(Selfless):
+class PteraFunction:
     def __init__(
         self,
         fn,
@@ -740,7 +740,9 @@ class PteraFunction(Selfless):
         attachments=None,
         partial_args=(),
     ):
-        super().__init__(fn, state)
+        self.fn = fn
+        self.__doc__ = fn.__doc__
+        self.state_obj = state
         self.isgenerator = inspect.isgeneratorfunction(self.fn)
         self.overlay = overlay or Overlay()
         self.return_object = return_object
@@ -749,7 +751,6 @@ class PteraFunction(Selfless):
         self.attachments = attachments or {}
 
     def clone(self, **kwargs):
-        self.ensure_state()
         kwargs = {
             "fn": self.fn,
             "state": copy(self.state_obj),
@@ -831,20 +832,22 @@ class PteraFunction(Selfless):
         with self.overlay as _:
             with proceed(self):
                 self._run_attachments()
-                yield from super().__call__(*self.partial_args, *args, **kwargs)
+                yield from self.fn(self, *self.partial_args, *args, **kwargs)
 
     def __call__(self, *args, **kwargs):
-        self.ensure_state()
         if self.isgenerator:
             return self.__gcall__(*args, **kwargs)
 
         with self.overlay as callres:
             with proceed(self):
                 self._run_attachments()
-                rval = super().__call__(*self.partial_args, *args, **kwargs)
+                rval = self.fn(self, *self.partial_args, *args, **kwargs)
                 callres["0"] = callres["value"] = rval
 
         if self.return_object:
             return callres
         else:
             return callres.value
+
+    def __str__(self):
+        return f"{self.fn.__name__}"

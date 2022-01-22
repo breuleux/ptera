@@ -1,18 +1,17 @@
 """Create objects out of functions."""
 
 import ast
-import builtins
 import inspect
 import re
 import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
-from copy import copy, deepcopy
+from copy import deepcopy
 from textwrap import dedent
 from types import TracebackType
 
 from .tags import get_tags
-from .utils import ABSENT, keyword_decorator
+from .utils import ABSENT
 
 idx = 0
 
@@ -39,7 +38,7 @@ class PteraNameError(NameError):
         super().__init__(msg)
 
     def info(self):
-        return self.function.state.__info__[self.varname]
+        return self.function.state_obj[self.varname]
 
 
 def name_error(varname, function, pop_frames=1):
@@ -308,29 +307,16 @@ class PteraTransformer(NodeTransformer):
                 self.make_interaction(
                     target=ast.Name(id=external, ctx=ast.Store()),
                     ann=None,
-                    value=ast.Name(id="__ptera_ABSENT", ctx=ast.Load()),
+                    value=ast.Subscript(
+                        value=ast.Name(id="__ptera_globals", ctx=ast.Load()),
+                        slice=ast.Constant(external),
+                        ctx=ast.Load(),
+                    ),
                     orig=node,
                 )
             )
-        new_args = ast.arguments(
-            posonlyargs=[],
-            args=list(node.args.args),
-            vararg=None,
-            kwonlyargs=[],
-            kw_defaults=[],
-            kwarg=None,
-            defaults=[
-                ast.copy_location(
-                    ast.Name(id="__ptera_ABSENT", ctx=ast.Load()), arg
-                )
-                for arg in node.args.args
-            ],
-        )
-        for dflt, arg in zip(
-            node.args.defaults, node.args.args[-len(node.args.defaults) :]
-        ):
-            self.defaults[arg.arg] = dflt
-        new_args.args.insert(0, ast.arg("__self__", ast.Constant(None)))
+
+        node.args.args.insert(0, ast.arg("__self__", ast.Constant(None)))
 
         first = node.body[0]
         if isinstance(first, ast.Expr):
@@ -347,7 +333,7 @@ class PteraTransformer(NodeTransformer):
         return ast.copy_location(
             ast.FunctionDef(
                 name=node.name,
-                args=new_args,
+                args=node.args,
                 body=new_body,
                 decorator_list=node.decorator_list,
                 returns=node.returns,
@@ -529,6 +515,17 @@ class Conformer:
         self.code = new_code
 
 
+class Resolver:
+    def __init__(self, *dicts):
+        self.dicts = dicts
+
+    def __getitem__(self, item):
+        for d in self.dicts:
+            if item in d:
+                return d[item]
+        return ABSENT
+
+
 def transform(fn, interact):
     src = dedent(inspect.getsource(fn))
 
@@ -563,6 +560,7 @@ def transform(fn, interact):
     glb["__ptera_interact"] = interact
     glb["__ptera_ABSENT"] = ABSENT
     glb["__ptera_get_tags"] = get_tags
+    glb["__ptera_globals"] = Resolver(glb, __builtins__)
 
     fname = fn.__name__
     save = glb.get(fname, None)
@@ -581,14 +579,6 @@ def transform(fn, interact):
 
     # However, we don't want to change the existing mapping of fn
     glb[fname] = save
-
-    state = {
-        k: override(
-            eval(compile(ast.Expression(v), filename, "eval"), glb, glb),
-            priority=-0.5,
-        )
-        for k, v in transformer.defaults.items()
-    }
 
     all_vars = transformer.used | transformer.assigned
 
@@ -621,13 +611,8 @@ def transform(fn, interact):
         for k in all_vars
     }
 
-    state_obj = state_class(fname, info)(state)
-
-    # The necessary globals may not yet be set, so we create a "PreState" that
-    # will be filled in whenever we first need to fetch the state.
-    state_obj = PreState(state=state_obj, names=transformer.external, glbls=glb)
     actual_fn._conformer = Conformer(fn, actual_fn, interact)
-    return actual_fn, state_obj
+    return actual_fn, info
 
 
 class Override:
@@ -657,74 +642,6 @@ def default(value, priority=-10):
     return override(value, priority)
 
 
-class PreState:
-    def __init__(self, state, names, glbls):
-        self.state = state
-        self.names = names
-        self.glbls = glbls
-
-    def make(self):
-        for varname in self.names:
-            val = self.glbls.get(varname, ABSENT)
-            if val is ABSENT:
-                val = getattr(builtins, varname, ABSENT)
-            setattr(self.state, varname, val)
-        return self.state
-
-
-class BaseState:
-    __slots__ = ()
-
-    def __init__(self, values):
-        for k, v in values.items():
-            setattr(self, k, v)
-
-
-def state_class(fname, info):
-    return type(
-        f"{fname}.state",
-        (BaseState,),
-        {"__slots__": tuple(info.keys()), "__info__": info},
-    )
-
-
-class Selfless:
-    def __init__(self, fn, state):
-        self.fn = fn
-        self.__doc__ = fn.__doc__
-        self.state_obj = state
-
-    @property
-    def state(self):
-        self.ensure_state()
-        return self.state_obj
-
-    def ensure_state(self):
-        if isinstance(self.state_obj, PreState):
-            self.state_obj = self.state_obj.make()
-
-    def new(self, **values):
-        rval = self.clone()
-        for k, v in values.items():
-            setattr(rval.state_obj, k, v)
-        return rval
-
-    def clone(self, **kwargs):
-        self.ensure_state()
-        kwargs = {"fn": self.fn, "state": copy(self.state_obj), **kwargs}
-        return type(self)(**kwargs)
-
-    def get(self, name):
-        return getattr(self.state_obj, name, ABSENT)
-
-    def __call__(self, *args, **kwargs):
-        self.ensure_state()
-        return self.fn(self, *args, **kwargs)
-
-    def __str__(self):
-        return f"{self.fn.__name__}"
-
-
 class ConflictError(Exception):
     """Represents an error due to different values having the same priority."""
 
@@ -752,23 +669,3 @@ def choose(opts, name):
                 f"variable '{name}': {', '.join(conflicts)}"
             )
         return with_prio[0][0]
-
-
-def selfless_interact(sym, key, category, __self__, value):
-    """Simple interaction function for selfless objects."""
-    from_state = __self__.get(sym)
-    rval = choose([value, from_state], name=sym)
-    if rval is ABSENT:
-        raise name_error(sym, __self__)
-    assert not isinstance(rval, Override)
-    return rval
-
-
-@keyword_decorator
-def selfless(fn, **defaults):
-    """Create a selfless object."""
-    new_fn, state = transform(fn, interact=selfless_interact)
-    rval = Selfless(new_fn, state)
-    if defaults:
-        rval = rval.new(**defaults)
-    return rval
