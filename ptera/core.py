@@ -3,10 +3,9 @@ import inspect
 import time
 from collections import deque
 from contextvars import ContextVar
-from copy import copy
 
 from .selector import Element, MatchFunction, select
-from .selfless import Override, choose, name_error, override
+from .selfless import ConflictError, Override, PteraNameError, override
 from .tags import match_tag
 from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, autocreate
 
@@ -17,7 +16,8 @@ class Frame:
 
     top = ContextVar("Frame.top", default=None)
 
-    def __init__(self):
+    def __init__(self, fn):
+        self.fn = fn
         self.accumulators = set()
         self.getters = {}
         self.setters = {}
@@ -51,9 +51,6 @@ class Frame:
     def exit(self):
         for acc in self.to_close:
             acc.close()
-
-
-_empty_frame = Frame()
 
 
 class Capture:
@@ -317,7 +314,7 @@ def fits_pattern(pfn, pattern):
     else:
         fname = pfn.origin
         fcat = pfn.fn.__annotations__.get("return", None)
-        fvars = pfn.state_obj
+        fvars = pfn.info
 
     if not check_element(pattern.element, fname, fcat):
         return False
@@ -349,7 +346,7 @@ class PatternCollection:
         self.patterns = list(patterns or [])
 
     def proceed(self, fn):
-        frame = _empty_frame
+        frame = Frame(fn)
         next_patterns = []
         to_process = deque(self.patterns)
         while to_process:
@@ -369,8 +366,6 @@ class PatternCollection:
                     acc = acc.fork(
                         focus=pattern.focus or is_template, pattern=pattern
                     )
-                if frame is _empty_frame:
-                    frame = Frame()
                 frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
                     if child.collapse:
@@ -420,55 +415,54 @@ class BaseOverlay:
             PatternCollection.current.reset(self.reset)
 
 
-def interact(sym, key, category, __self__, value):
+def interact(sym, key, category, value):
 
     if key is None:
-        from_state = getattr(__self__.state_obj, sym, ABSENT)
+
+        if isinstance(value, Override):
+            rval, vprio = value.value, value.priority
+        else:
+            rval, vprio = value, 0
+
         fr = Frame.top.get()
-        if sym not in fr.accumulators:
-            if from_state is ABSENT and not isinstance(value, Override):
-                if value is ABSENT:
-                    raise name_error(sym, __self__)
-                return value
-            elif value is ABSENT and not isinstance(from_state, Override):
-                return from_state
-            else:
-                return choose([value, from_state], name=sym)
 
         if sym in fr.getters:
             fr_value = fr.get(sym, key, category, value)
-        else:
-            fr_value = ABSENT
-        if (
-            value is ABSENT
-            and fr_value is ABSENT
-            and not isinstance(from_state, Override)
-        ):
-            value = from_state
-        elif (
-            fr_value is ABSENT
-            and from_state is ABSENT
-            and not isinstance(value, Override)
-        ):
-            pass
-        else:
-            value = choose([value, fr_value, from_state], name=sym)
-        if value is ABSENT:
-            raise NameError(f"Variable {sym} of {__self__} is not set.")
+            if fr_value is not ABSENT:
+                if isinstance(fr_value, Override):
+                    fr_value, fprio = fr_value.value, fr_value.priority
+                else:
+                    fr_value, fprio = fr_value, 0
+
+                if rval is ABSENT:
+                    rval = fr_value
+                elif vprio > fprio:
+                    pass
+                elif vprio < fprio:
+                    rval = fr_value
+                elif vprio == fprio:
+                    raise ConflictError(
+                        f"Multiple values with same priority conflict for "
+                        f"variable '{sym}': {value}, {fr_value}"
+                    )
+
+        if rval is ABSENT:
+            raise PteraNameError(sym, fr.fn)
 
         if sym in fr.setters:
-            fr.set(sym, key, category, value)
-        return value
+            fr.set(sym, key, category, rval)
+
+        return rval
 
     else:
         # TODO: it is not clear at the moment in what circumstance value may be
         # ABSENT
         assert value is not ABSENT
         with proceed(sym):
-            interact("#key", None, None, __self__, key)
+            interact("#key", None, None, key)
             # TODO: merge the return value of interact (currently raises
             # ConflictError)
-            interact("#value", None, category, __self__, value)
+            interact("#value", None, category, value)
             return value
 
 
@@ -733,7 +727,7 @@ class PteraFunction:
     def __init__(
         self,
         fn,
-        state,
+        info,
         overlay=None,
         return_object=False,
         origin=None,
@@ -742,7 +736,7 @@ class PteraFunction:
     ):
         self.fn = fn
         self.__doc__ = fn.__doc__
-        self.state_obj = state
+        self.info = info
         self.isgenerator = inspect.isgeneratorfunction(self.fn)
         self.overlay = overlay or Overlay()
         self.return_object = return_object
@@ -753,7 +747,7 @@ class PteraFunction:
     def clone(self, **kwargs):
         kwargs = {
             "fn": self.fn,
-            "state": copy(self.state_obj),
+            "info": self.info,
             "overlay": Overlay(self.overlay.plugins),
             "return_object": self.return_object,
             "origin": self.origin,
@@ -823,16 +817,16 @@ class PteraFunction:
             return self.clone(partial_args=self.partial_args + (obj,))
 
     def _run_attachments(self):
-        interact("#time", None, None, self, time.time())
+        interact("#time", None, None, time.time())
         if self.attachments:
             for k, v in self.attachments.items():
-                interact(f"#{k}", None, None, self, v)
+                interact(f"#{k}", None, None, v)
 
     def __gcall__(self, *args, **kwargs):
         with self.overlay as _:
             with proceed(self):
                 self._run_attachments()
-                yield from self.fn(self, *self.partial_args, *args, **kwargs)
+                yield from self.fn(*self.partial_args, *args, **kwargs)
 
     def __call__(self, *args, **kwargs):
         if self.isgenerator:
@@ -841,7 +835,7 @@ class PteraFunction:
         with self.overlay as callres:
             with proceed(self):
                 self._run_attachments()
-                rval = self.fn(self, *self.partial_args, *args, **kwargs)
+                rval = self.fn(*self.partial_args, *args, **kwargs)
                 callres["0"] = callres["value"] = rval
 
         if self.return_object:

@@ -38,7 +38,7 @@ class PteraNameError(NameError):
         super().__init__(msg)
 
     def info(self):
-        return self.function.state_obj[self.varname]
+        return self.function.info[self.varname]
 
 
 def name_error(varname, function, pop_frames=1):
@@ -169,10 +169,6 @@ class PteraTransformer(NodeTransformer):
         self.defaults = {}
         self.result = self.visit_FunctionDef(tree, root=True)
 
-    def fself(self):
-        """Create a Name for the self-function."""
-        return ast.Name(id="__self__", ctx=ast.Load())
-
     def _ann(self, ann):
         if isinstance(ann, ast.Str) and ann.s.startswith("@"):
             tags = re.split(r" *& *", ann.s)
@@ -201,7 +197,6 @@ class PteraTransformer(NodeTransformer):
                 ast.Constant(value=target.id),
                 ast.Constant(value=None),
                 ann_arg,
-                self.fself(),
                 value_arg,
             ]
         elif isinstance(target, ast.Subscript) and isinstance(
@@ -213,7 +208,6 @@ class PteraTransformer(NodeTransformer):
                 ast.Constant(value=target.value.id),
                 deepcopy(slc),
                 ann_arg,
-                self.fself(),
                 value_arg,
             ]
         else:
@@ -316,8 +310,6 @@ class PteraTransformer(NodeTransformer):
                 )
             )
 
-        node.args.args.insert(0, ast.arg("__self__", ast.Constant(None)))
-
         first = node.body[0]
         if isinstance(first, ast.Expr):
             v = first.value
@@ -381,7 +373,6 @@ class PteraTransformer(NodeTransformer):
                 ast.Constant(value="#value"),
                 ast.Constant(value=None),
                 ast.Constant(value=None),
-                self.fself(),
                 self.visit(node.value or ast.Constant(value=None)),
             ],
             keywords=[],
