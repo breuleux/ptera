@@ -455,16 +455,6 @@ def test_readme():
     assert result == 9
 
 
-@tooled.defaults(x=10, y=20)
-def vanilla(x, y):
-    return x * y
-
-
-def test_ptera_defaults():
-    assert vanilla() == 200
-    assert vanilla(4, 5) == 20
-
-
 def test_capture():
     cap = Capture(parse("x"))
     assert cap.name == "x"
@@ -496,23 +486,6 @@ def test_capture():
 def cake():
     flavour: tag.Flavour
     return f"This is a {flavour} cake"
-
-
-@tooled
-def fruitcake():
-    my_cake = cake.new(flavour="fruit").clone(return_object=True)
-
-    @my_cake.on("flavour")
-    def yum(args):
-        return args["flavour"] * 2
-
-    return my_cake()
-
-
-def test_listener_within_ptera():
-    res = fruitcake()
-    assert res.value == "This is a fruit cake"
-    assert res.yum == ["fruitfruit"]
 
 
 def test_doc():

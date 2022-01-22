@@ -38,27 +38,18 @@ def redirect(fn, new_fn):
 
 
 class PteraDecorator:
-    def __init__(self, defaults={}, inplace=False):
-        self._defaults = defaults
+    def __init__(self, inplace=False):
         self._inplace = inplace
         if inplace:
             self.inplace = self
         else:
-            self.inplace = PteraDecorator(defaults=self._defaults, inplace=True)
-
-    def defaults(self, **defaults):
-        return PteraDecorator(defaults={**self._defaults, **defaults})
+            self.inplace = PteraDecorator(inplace=True)
 
     def __call__(self, fn):
         if isinstance(fn, PteraFunction) or hasattr(fn, "__ptera__"):
             return fn
         new_fn, state = transform(fn, interact=interact)
         new_fn = PteraFunction(new_fn, state)
-        if self._defaults:
-            new_fn = new_fn.new(
-                **{k: override(v, -0.5) for k, v in self._defaults.items()}
-            )
-
         if self._inplace:
             redirect(fn, new_fn)
             fn.__ptera__ = new_fn
@@ -67,4 +58,4 @@ class PteraDecorator:
             return new_fn
 
 
-tooled = PteraDecorator(defaults={})
+tooled = PteraDecorator()
