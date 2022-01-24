@@ -401,41 +401,6 @@ def make_dollar(node, _, name, context):
     )
 
 
-@evaluate.register_action("X [ X ] _")
-def make_index(node, element, key, _, context, resolve_call=False):
-    def _make_key(key, suffix):
-        assert isinstance(key, Element)
-        if key.value is not ABSENT:
-            assert key.name is None
-            val = key.value
-        else:
-            val = VSymbol(key.name) if key.name is not None else ABSENT
-        return Element(
-            name=f"#key{suffix}",
-            value=val,
-            category=key.category,
-            capture=key.capture if key.name != key.capture else None,
-            key_field="value" if key.name is None else None,
-        )
-
-    element = evaluate(element, context=context)
-    key = evaluate(key, context=context)
-    assert isinstance(element, Element)
-    element = _guarantee_call(element, context=context, resolve=resolve_call)
-
-    if isinstance(key, list):
-        keys = tuple(_make_key(key, i) for i, key in enumerate(key))
-    else:
-        keys = (_make_key(key, ""),)
-
-    return element.clone(captures=element.captures + keys)
-
-
-@evaluate.register_action("X [[ X ]] _")
-def make_function_index(node, element, key, _, context):
-    return make_index(node, element, key, _, context, resolve_call=True)
-
-
 @evaluate.register_action("X ( _ ) _")
 @evaluate.register_action("X ( X ) _")
 def make_call_capture(node, fn, names, _, context):

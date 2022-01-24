@@ -28,10 +28,10 @@ def extra(cheese):
 @tooled
 @tooled
 def double_brie(x1, y1):
-    a = brie[[1]](x1, x1 + 1)
-    b = brie[[2]](y1, y1 + 1)
-    aa = extra[[1]](a)
-    bb = extra[[2]](b)
+    a = brie(x1, x1 + 1)
+    b = brie(y1, y1 + 1)
+    aa = extra(a)
+    bb = extra(b)
     return aa + bb
 
 
@@ -98,15 +98,6 @@ def test_patterns():
         {"cheese": [221], "x": [2, 10]},
     ]
 
-    # Indexing
-    assert _dbrie("brie[[$i]](!a)") == [
-        {"a": [4], "i": [1]},
-        {"a": [100], "i": [2]},
-    ]
-    assert _dbrie("brie[[1]](!a)") == [{"a": [4]}]
-    assert _dbrie("brie[[1.0]](!a)") == [{"a": [4]}]
-    assert _dbrie("brie[[2]](!a)") == [{"a": [100]}]
-
     # Parameter
     assert _dbrie("brie($v:tag.Bouffe)") == [{"v": [4, 9]}, {"v": [100, 121]}]
     assert _dbrie("brie($v:@Bouffe)") == [{"v": [4, 9]}, {"v": [100, 121]}]
@@ -159,57 +150,6 @@ def test_deep():
     ]
 
 
-@tooled
-def fib(n):
-    f = Recurrence(2)
-    f[0] = 1
-    f[1] = 1
-    for i in range(2, n + 1):
-        f[i] = f[i - 1] + f[i - 2]
-    return f[n]
-
-
-even = every(2)
-
-
-def test_match():
-    res, fs = fib.using("f[~even] as x")(5)
-    assert fs.map("x") == [1, 2, 5]
-
-    res, fs = fib.using("f[$i ~ every(2)] as x")(5)
-    assert fs.map("x") == [1, 2, 5]
-
-    res, fs = fib.using("f[$i ~ every(2, start=1)] as x")(5)
-    assert fs.map("x") == [1, 3, 8]
-
-    res, fs = fib.using("f[$i ~ even] as x")(5)
-    assert fs.map("i", "x") == [(0, 1), (2, 2), (4, 5)]
-
-
-def test_indexing():
-    assert fib(5) == 8
-
-    res, fs = fib.using("f[0] as x")(5)
-    assert fs.map("x") == [1]
-
-    res, fs = fib.using("'f'(#key=0) as x")(5)
-    assert fs.map("x") == [1]
-
-    res, fs = fib.using("f[$i] as x")(5)
-    intermediates = [1, 1, 2, 3, 5, 8]
-    indices = list(range(6))
-    assert fs.map("x") == intermediates
-    assert fs.map("i") == indices
-    assert fs.map("i", "x") == list(zip(indices, intermediates))
-
-
-def test_indexing_2():
-    res, fs = fib.full_tapping("fib(!n, f[3] as x)")(5)
-    assert res == 8
-    assert fs.map("n") == [5]
-    assert fs.map("x") == [3]
-
-
 def test_attach():
     _brie = brie.attach(hello=12).using("brie > #hello")
     res, hello = _brie(5, 6)
@@ -222,19 +162,19 @@ def superbrie(n):
     k = 0
     for i in range(n):
         for j in range(n):
-            result += brie[[i, j]](k, 2)
+            result += brie(k, 2)
             k = k + 1
     return result
 
 
-def test_function_indexing():
+def test_nested_loops():
     assert superbrie(10) == 328750
 
-    _, x = superbrie.using("brie[[1, $j]] > x")(10)
+    _, x = superbrie.using("superbrie(i=1, j) > brie > x")(10)
     assert x.map("j") == list(range(10))
     assert x.map("x") == list(range(10, 20))
 
-    _, x = superbrie.using("brie[[1, $j ~ every(3)]] > x")(10)
+    _, x = superbrie.using("superbrie(i=1, j ~ every(3)) > brie > x")(10)
     assert x.map("x") == list(range(10, 20, 3))
 
 

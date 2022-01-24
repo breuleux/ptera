@@ -116,6 +116,7 @@ class BaseAccumulator:
         template=True,
         focus=True,
     ):
+        assert focus
         self.pattern = pattern
         self.parent = parent
         self.children = []
@@ -416,54 +417,40 @@ class BaseOverlay:
 
 
 def interact(sym, key, category, value):
-
-    if key is None:
-
-        if isinstance(value, Override):
-            rval, vprio = value.value, value.priority
-        else:
-            rval, vprio = value, 0
-
-        fr = Frame.top.get()
-
-        if sym in fr.getters:
-            fr_value = fr.get(sym, key, category, value)
-            if fr_value is not ABSENT:
-                if isinstance(fr_value, Override):
-                    fr_value, fprio = fr_value.value, fr_value.priority
-                else:
-                    fr_value, fprio = fr_value, 0
-
-                if rval is ABSENT:
-                    rval = fr_value
-                elif vprio > fprio:
-                    pass
-                elif vprio < fprio:
-                    rval = fr_value
-                elif vprio == fprio:
-                    raise ConflictError(
-                        f"Multiple values with same priority conflict for "
-                        f"variable '{sym}': {value}, {fr_value}"
-                    )
-
-        if rval is ABSENT:
-            raise PteraNameError(sym, fr.fn)
-
-        if sym in fr.setters:
-            fr.set(sym, key, category, rval)
-
-        return rval
-
+    if isinstance(value, Override):
+        rval, vprio = value.value, value.priority
     else:
-        # TODO: it is not clear at the moment in what circumstance value may be
-        # ABSENT
-        assert value is not ABSENT
-        with proceed(sym):
-            interact("#key", None, None, key)
-            # TODO: merge the return value of interact (currently raises
-            # ConflictError)
-            interact("#value", None, category, value)
-            return value
+        rval, vprio = value, 0
+
+    fr = Frame.top.get()
+
+    if sym in fr.getters:
+        fr_value = fr.get(sym, key, category, value)
+        if fr_value is not ABSENT:
+            if isinstance(fr_value, Override):
+                fr_value, fprio = fr_value.value, fr_value.priority
+            else:
+                fr_value, fprio = fr_value, 0
+
+            if rval is ABSENT:
+                rval = fr_value
+            elif vprio > fprio:
+                pass
+            elif vprio < fprio:
+                rval = fr_value
+            elif vprio == fprio:
+                raise ConflictError(
+                    f"Multiple values with same priority conflict for "
+                    f"variable '{sym}': {value}, {fr_value}"
+                )
+
+    if rval is ABSENT:
+        raise PteraNameError(sym, fr.fn)
+
+    if sym in fr.setters:
+        fr.set(sym, key, category, rval)
+
+    return rval
 
 
 class PluginWrapper:
@@ -759,16 +746,6 @@ class PteraFunction:
 
     def attach(self, **values):
         return self.clone(attachments={**self.attachments, **values})
-
-    def __getitem__(self, callkey):
-        assert isinstance(callkey, list)
-        if len(callkey) == 1:
-            (callkey,) = callkey
-        attach = {"key": callkey}
-        if isinstance(callkey, list):
-            for i, v in enumerate(callkey):
-                attach[f"key{i}"] = v
-        return self.attach(**attach)
 
     def use(self, *plugins, **kwplugins):
         self.overlay.use(*plugins, **kwplugins)
