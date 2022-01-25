@@ -4,7 +4,7 @@ import time
 from collections import deque
 from contextvars import ContextVar
 
-from .selector import Element, MatchFunction, select
+from .selector import Element, select
 from .selfless import ConflictError, Override, PteraNameError, override
 from .tags import match_tag
 from .utils import ABSENT, ACTIVE, COMPLETE, autocreate
@@ -126,7 +126,7 @@ class BaseAccumulator:
         self.template = template
         self.focus = focus
         if self.parent is None:
-            self.names = set(pattern.all_captures())
+            self.names = set(pattern.all_captures)
         else:
             self.names = self.parent.names
             self.parent.children.append(self)
@@ -435,19 +435,11 @@ class ActivePluginWrapper:
 
 
 def selector_filterer(selector, fn):
-    def check_value(evalue, value):
-        return evalue == value or (
-            isinstance(evalue, MatchFunction) and evalue.fn(value)
-        )
-
     def new_fn(results):
-        for v in selector.all_values():
-            if v.capture in results:
-                cap = results[v.capture]
-                for value in cap.values:
-                    if not check_value(v.value, value):
-                        return ABSENT
-        return fn(results)
+        if selector.check_captures(results):
+            return fn(results)
+        else:
+            return ABSENT
 
     return new_fn
 

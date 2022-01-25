@@ -4,11 +4,22 @@
 import builtins
 import re
 import sys
+from collections import defaultdict
 from itertools import count
 
 from . import opparse
 from .tags import Tag, tag as tag_factory
 from .utils import ABSENT
+
+
+class cached_property:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __get__(self, obj, cls):
+        val = self.fn(obj)
+        setattr(obj, self.fn.__name__, val)
+        return val
 
 
 class InternedMC(type):
@@ -24,7 +35,26 @@ class InternedMC(type):
         return cls._cache[key]
 
 
-class Element(metaclass=InternedMC):
+class ElementBase(metaclass=InternedMC):
+    def check_captures(self, captures):
+        for v in self.all_values:
+            if v.capture in captures:
+                cap = captures[v.capture]
+                for value in cap.values:
+                    match = v.value == value or (
+                        isinstance(v.value, MatchFunction) and v.value.fn(value)
+                    )
+                    if not match:
+                        return False
+        return True
+
+    def __str__(self):
+        return f'sel("{self.encode()}")'
+
+    __repr__ = __str__
+
+
+class Element(ElementBase):
     """Represents a variable or some other atom."""
 
     _constructor_defaults = {
@@ -42,8 +72,40 @@ class Element(metaclass=InternedMC):
         self.capture = capture
         self.tags = tags
         self.key_field = key_field
-        self.focus = 1 in self.tags
-        self.hasval = self.value is not ABSENT
+        assert self.key_field == "name" or self.key_field is None
+
+    @cached_property
+    def focus(self):
+        return 1 in self.tags
+
+    @cached_property
+    def hasval(self):
+        return self.value is not ABSENT
+
+    @cached_property
+    def all_captures(self):
+        if self.capture and not self.capture.startswith("/"):
+            return {self.capture}
+        else:
+            return set()
+
+    @cached_property
+    def all_values(self):
+        return [self] if self.hasval else []
+
+    @cached_property
+    def valid(self):
+        if self.name is None:
+            return self.focus
+        else:
+            return True
+
+    @cached_property
+    def key_captures(self):
+        if self.key_field is not None:
+            return {(self.capture, self.key_field)}
+        else:
+            return set()
 
     def with_focus(self):
         return self.clone(tags=self.tags | frozenset({1}))
@@ -63,21 +125,6 @@ class Element(metaclass=InternedMC):
         }
         return Element(**args)
 
-    def all_captures(self):
-        if self.capture and not self.capture.startswith("/"):
-            return {self.capture}
-        else:
-            return set()
-
-    def all_values(self):
-        return [self] if self.hasval else []
-
-    def valid(self):
-        if self.name is None:
-            return self.focus
-        else:
-            return True
-
     def rewrite(self, required, focus=None):
         if focus is not None and focus == self.capture:
             return self.with_focus()
@@ -92,12 +139,6 @@ class Element(metaclass=InternedMC):
             return self.without_focus()
         else:
             return self
-
-    def key_captures(self):
-        if self.key_field is not None:
-            return {(self.capture, self.key_field)}
-        else:
-            return set()
 
     def specialize(self, specializations):
         """Replace $variables in the selector using a specializations dict."""
@@ -132,13 +173,8 @@ class Element(metaclass=InternedMC):
         val = f"={self.value}" if self.value is not ABSENT else ""
         return f"{focus}{name}{cap}{cat}{val}"
 
-    def __str__(self):
-        return f'sel("{self.encode()}")'
 
-    __repr__ = __str__
-
-
-class Call(metaclass=InternedMC):
+class Call(ElementBase):
     """Represents a call in the call stack."""
 
     _constructor_defaults = {
@@ -148,14 +184,63 @@ class Call(metaclass=InternedMC):
         "collapse": False,
     }
 
+    # def __init__(self, *, element, children=(), captures=(), immediate=False, collapse=False):
+
     def __init__(self, *, element, children, captures, immediate, collapse):
         self.element = element
         self.children = children
         self.captures = captures
         self.immediate = immediate
         self.collapse = collapse
-        self.focus = any(x.focus for x in self.captures + self.children)
-        self.hasval = any(x.hasval for x in self.captures + self.children)
+
+    @cached_property
+    def focus(self):
+        return any(x.focus for x in self.captures + self.children)
+
+    @cached_property
+    def hasval(self):
+        return any(x.hasval for x in self.captures + self.children)
+
+    @cached_property
+    def all_tags(self):
+        results = defaultdict(set)
+        for child in self.children:
+            for tag, values in child.all_tags.items():
+                results[tag] |= values
+        for cap in self.captures:
+            for tag in cap.tags:
+                results[tag].add(cap)
+        return results
+
+    @cached_property
+    def all_captures(self):
+        rval = set()
+        for x in self.captures + self.children:
+            rval.update(x.all_captures)
+        return rval
+
+    @cached_property
+    def all_values(self):
+        rval = []
+        for x in self.captures + self.children:
+            rval += x.all_values
+        return rval
+
+    @cached_property
+    def valid(self):
+        return (
+            all(x.valid for x in self.captures + self.children)
+            and sum(x.focus for x in self.captures + self.children) <= 1
+        )
+
+    @cached_property
+    def key_captures(self):
+        rval = self.element.key_captures
+        for child in self.children:
+            rval.update(child.key_captures)
+        for cap in self.captures:
+            rval.update(cap.key_captures)
+        return rval
 
     def clone(self, **changes):
         args = {
@@ -168,33 +253,6 @@ class Call(metaclass=InternedMC):
         }
         return Call(**args)
 
-    def find_tag(self, tag):
-        results = set()
-        for child in self.children:
-            results |= child.find_tag(tag)
-        for cap in self.captures:
-            if tag in cap.tags:
-                results.add(cap)
-        return results
-
-    def all_captures(self):
-        rval = set()
-        for x in self.captures + self.children:
-            rval.update(x.all_captures())
-        return rval
-
-    def all_values(self):
-        rval = []
-        for x in self.captures + self.children:
-            rval += x.all_values()
-        return rval
-
-    def valid(self):
-        return (
-            all(x.valid() for x in self.captures + self.children)
-            and sum(x.focus for x in self.captures + self.children) <= 1
-        )
-
     def rewrite(self, required, focus=None):
         captures = [x.rewrite(required, focus) for x in self.captures]
         captures = [x for x in captures if x is not None]
@@ -206,14 +264,6 @@ class Call(metaclass=InternedMC):
             return None
 
         return self.clone(captures=tuple(captures), children=tuple(children))
-
-    def key_captures(self):
-        rval = self.element.key_captures()
-        for child in self.children:
-            rval.update(child.key_captures())
-        for cap in self.captures:
-            rval.update(cap.key_captures())
-        return rval
 
     def specialize(self, specializations):
         """Replace $variables in the selector using a specializations dict."""
@@ -239,11 +289,6 @@ class Call(metaclass=InternedMC):
             caps.append(enc)
         caps = "" if not caps else "(" + ", ".join(caps) + ")"
         return f"{name}{caps}"
-
-    def __str__(self):
-        return f'sel("{self.encode()}")'
-
-    __repr__ = __str__
 
 
 parser = opparse.Parser(

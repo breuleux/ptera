@@ -271,13 +271,13 @@ def test_select_errors():
 
 @one_test_per_assert
 def test_validity():
-    assert not sel.parse("a($b)").valid()
-    assert sel.parse("a >> $b").valid()
-    assert sel.parse("a(!$b)").valid()
-    assert not sel.parse("a(!$b, !$c)").valid()
-    assert sel.parse("a(b, c)").valid()
-    assert sel.parse("a(!b, c)").valid()
-    assert not sel.parse("a(!b, !c)").valid()
+    assert not sel.parse("a($b)").valid
+    assert sel.parse("a >> $b").valid
+    assert sel.parse("a(!$b)").valid
+    assert not sel.parse("a(!$b, !$c)").valid
+    assert sel.parse("a(b, c)").valid
+    assert sel.parse("a(!b, c)").valid
+    assert not sel.parse("a(!b, !c)").valid
 
 
 def _rewrite(before, after, required, focus=None):
@@ -357,17 +357,17 @@ def test_specialize():
 
 def test_find_tag():
     expr = sel.parse("f(!!x) > g > y")
-    t1 = expr.find_tag(1)
+    t1 = expr.all_tags[1]
     assert len(t1) == 1
     (t1,) = t1
     assert t1.name == "y" and t1 in list(expr.children)[0].captures
 
-    t2 = expr.find_tag(2)
+    t2 = expr.all_tags[2]
     assert len(t2) == 1
     (t2,) = t2
     assert t2.name == "x" and t2 in expr.captures
 
-    assert sel.parse("f(x) > y").find_tag(2) == set()
+    assert sel.parse("f(x) > y").all_tags[2] == set()
 
 
 def _encode(x):
