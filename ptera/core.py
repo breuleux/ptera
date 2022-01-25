@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from .selector import Element, MatchFunction, select
 from .selfless import ConflictError, Override, PteraNameError, override
 from .tags import match_tag
-from .utils import ABSENT, ACTIVE, COMPLETE, FAILED, autocreate
+from .utils import ABSENT, ACTIVE, COMPLETE, autocreate
 
 _pattern_fit_cache = {}
 
@@ -172,25 +172,12 @@ class BaseAccumulator:
                 rval += child.leaves()
             return rval
 
-    def _to_merge(self):
-        rval = []
-        for child in self.children:
-            if not child.focus:
-                rval.append(child)
-                rval += child._to_merge()
-        return rval
-
     varset = None
     varget = None
     close = None
 
 
 class TotalAccumulator(BaseAccumulator):
-    def fail(self):
-        self.status = FAILED
-        for leaf in self.leaves():
-            leaf.status = FAILED
-
     def varset(self, element, varname, category, value):
         acc = self.fork(pattern=element) if element.focus else self
         cap = acc.getcap(element)
@@ -207,8 +194,6 @@ class TotalAccumulator(BaseAccumulator):
     def close(self):
         if self.status is ACTIVE:
             if self.parent is None:
-                for acc in self._to_merge():
-                    self.captures.update(acc.captures)
                 leaves = self.leaves()
                 for leaf in leaves or [self]:
                     leaf.run()
@@ -288,14 +273,9 @@ def check_element(el, name, category):
 
 
 def fits_pattern(pfn, pattern):
-    if isinstance(pfn, str):
-        fname = pfn
-        fcat = None
-        fvars = {}
-    else:
-        fname = pfn.origin
-        fcat = pfn.fn.__annotations__.get("return", None)
-        fvars = pfn.info
+    fname = pfn.origin
+    fcat = pfn.fn.__annotations__.get("return", None)
+    fvars = pfn.info
 
     if not check_element(pattern.element, fname, fcat):
         return False
@@ -332,8 +312,6 @@ class PatternCollection:
         to_process = deque(self.patterns)
         while to_process:
             pattern, acc = to_process.pop()
-            if acc.status is FAILED:
-                continue
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
             cachekey = (fn, pattern)

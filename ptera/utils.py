@@ -23,11 +23,8 @@ class Named:
 
 
 ABSENT = Named("ABSENT")
-# IMMEDIATE = Named("IMMEDIATE")
-# NESTED = Named("NESTED")
 ACTIVE = Named("ACTIVE")
 COMPLETE = Named("COMPLETE")
-FAILED = Named("FAILED")
 
 
 def keyword_decorator(deco):
