@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from ptera import BaseOverlay, Overlay, Recurrence, select, tag, tooled
+from ptera import BaseOverlay, Overlay, select, tag, tooled
 from ptera.core import Capture, Tap, selector_filterer
 from ptera.selector import Element, MatchFunction, parse
 from ptera.selfless import default
