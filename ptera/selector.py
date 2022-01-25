@@ -62,17 +62,14 @@ class Element(ElementBase):
         "category": None,
         "capture": None,
         "tags": frozenset(),
-        "key_field": None,
     }
 
-    def __init__(self, *, name, value, category, capture, tags, key_field):
+    def __init__(self, *, name, value, category, capture, tags):
         self.name = name
         self.value = value
         self.category = category
         self.capture = capture
         self.tags = tags
-        self.key_field = key_field
-        assert self.key_field == "name" or self.key_field is None
 
     @cached_property
     def focus(self):
@@ -100,13 +97,6 @@ class Element(ElementBase):
         else:
             return True
 
-    @cached_property
-    def key_captures(self):
-        if self.key_field is not None:
-            return {(self.capture, self.key_field)}
-        else:
-            return set()
-
     def with_focus(self):
         return self.clone(tags=self.tags | frozenset({1}))
 
@@ -120,7 +110,6 @@ class Element(ElementBase):
             "category": self.category,
             "capture": self.capture,
             "tags": self.tags,
-            "key_field": self.key_field,
             **changes,
         }
         return Element(**args)
@@ -150,10 +139,6 @@ class Element(ElementBase):
             category=self.category if spc.category is None else spc.category,
             value=self.value if spc.value is ABSENT else spc.value,
         )
-        if rval.key_field == "name" and rval.name is not None:
-            rval = rval.clone(key_field=None)
-        if rval.key_field == "value" and rval.value is not ABSENT:
-            rval = rval.clone(key_field=None)
         return rval
 
     def encode(self):
@@ -183,8 +168,6 @@ class Call(ElementBase):
         "immediate": False,
         "collapse": False,
     }
-
-    # def __init__(self, *, element, children=(), captures=(), immediate=False, collapse=False):
 
     def __init__(self, *, element, children, captures, immediate, collapse):
         self.element = element
@@ -232,15 +215,6 @@ class Call(ElementBase):
             all(x.valid for x in self.captures + self.children)
             and sum(x.focus for x in self.captures + self.children) <= 1
         )
-
-    @cached_property
-    def key_captures(self):
-        rval = self.element.key_captures
-        for child in self.children:
-            rval.update(child.key_captures)
-        for cap in self.captures:
-            rval.update(cap.key_captures)
-        return rval
 
     def clone(self, **changes):
         args = {
@@ -450,9 +424,7 @@ def make_double_focus(node, _, element, context):
 @evaluate.register_action("_ $ X")
 def make_dollar(node, _, name, context):
     name = evaluate(name, context=context)
-    return Element(
-        name=None, category=None, capture=name.name, key_field="name"
-    )
+    return Element(name=None, category=None, capture=name.name)
 
 
 @evaluate.register_action("X ( _ ) _")
@@ -483,10 +455,7 @@ def make_as(node, element, name, context):
     element = evaluate(element, context=context)
     name = evaluate(name, context=context)
     if isinstance(element, Element):
-        return element.clone(
-            capture=name.name,
-            key_field="name" if element.name is None else None,
-        )
+        return element.clone(capture=name.name)
     else:
         focus = context == "root"
         new_capture = Element(

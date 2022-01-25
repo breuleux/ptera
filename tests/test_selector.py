@@ -218,7 +218,7 @@ def test_parser():
     # )
 
     assert sel.parse("$f:Fruit") == sel.Element(
-        name=None, category=sel.VSymbol("Fruit"), capture="f", key_field="name"
+        name=None, category=sel.VSymbol("Fruit"), capture="f"
     )
 
     assert sel.parse("!!x") == sel.Element(
