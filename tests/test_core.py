@@ -3,8 +3,8 @@ import sys
 import pytest
 
 from ptera import BaseOverlay, Overlay, Recurrence, select, tag, tooled
-from ptera.core import Capture, Tap
-from ptera.selector import Element, parse
+from ptera.core import Capture, Tap, selector_filterer
+from ptera.selector import Element, MatchFunction, parse
 from ptera.selfless import default
 from ptera.tools import every
 
@@ -51,7 +51,9 @@ class GrabAll:
                 {name: cap.values for name, cap in args.items()}
             )
 
-        self.rules = {pattern: {"listeners": listener}}
+        self.rules = {
+            pattern: {"listeners": selector_filterer(pattern, listener)}
+        }
 
 
 def _test(f, args, pattern):
@@ -121,8 +123,11 @@ def test_patterns():
     assert _dbrie("brie > $x:tag.Xylophone") == []
 
     # Filter on value
-    assert _dbrie("brie(!x, y, a=4)") == [{"x": [2], "y": [3]}]
-    assert _dbrie("double_brie(x1=2) > brie > x") == [{"x": [2]}, {"x": [10]}]
+    assert _dbrie("brie(!x, y, a=4)") == [{"a": [4], "x": [2], "y": [3]}]
+    assert _dbrie("double_brie(x1=2) > brie > x") == [
+        {"x1": [2], "x": [2]},
+        {"x1": [2], "x": [10]},
+    ]
     assert _dbrie("double_brie(#value=1234) > brie > x") == []
 
 
@@ -153,7 +158,7 @@ def test_deep():
 def test_attach():
     _brie = brie.attach(hello=12).using("brie > #hello")
     res, hello = _brie(5, 6)
-    assert hello.map("hello") == [12]
+    assert hello.map("#hello") == [12]
 
 
 @tooled

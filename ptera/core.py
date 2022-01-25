@@ -163,13 +163,6 @@ class BaseAccumulator:
         rval = self.build_all()
         return rval and {k: v for k, v in rval.items() if not k.startswith("/")}
 
-    def check_value(self, evalue, value):
-        return (
-            evalue is ABSENT
-            or evalue == value
-            or (isinstance(evalue, MatchFunction) and evalue.fn(value))
-        )
-
     def leaves(self):
         if isinstance(self.pattern, Element) and self.focus:
             return [self]
@@ -199,14 +192,10 @@ class TotalAccumulator(BaseAccumulator):
             leaf.status = FAILED
 
     def varset(self, element, varname, category, value):
-        if self.check_value(element.value, value):
-            acc = self.fork(pattern=element) if element.focus else self
-            cap = acc.getcap(element)
-            cap.accum(varname, value)
-            return acc
-        else:
-            self.fail()
-            return None
+        acc = self.fork(pattern=element) if element.focus else self
+        cap = acc.getcap(element)
+        cap.accum(varname, value)
+        return acc
 
     def run(self):
         args = self.build()
@@ -228,16 +217,7 @@ class TotalAccumulator(BaseAccumulator):
 
 class ImmediateAccumulator(BaseAccumulator):
     def build_all(self):
-        rval = super().build_all()
-
-        for cap in rval.values():
-            element = cap.element
-            if element.value is not ABSENT:
-                if not self.check_value(element.value, cap.value):
-                    return None
-
-        rval = {k: cap.snapshot() for k, cap in rval.items()}
-        return rval
+        return {k: cap.snapshot() for k, cap in super().build_all().items()}
 
     def varset(self, element, varname, category, value):
         acc = self.fork(pattern=element) if element.focus else self
@@ -363,7 +343,7 @@ class PatternCollection:
                 _pattern_fit_cache[cachekey] = capmap
             if capmap is not False:
                 is_template = acc.template
-                if pattern.focus or is_template or pattern.hasval:
+                if pattern.focus or is_template:
                     acc = acc.fork(
                         focus=pattern.focus or is_template, pattern=pattern
                     )
@@ -476,6 +456,24 @@ class ActivePluginWrapper:
         return self.fn(rval)
 
 
+def selector_filterer(selector, fn):
+    def check_value(evalue, value):
+        return evalue == value or (
+            isinstance(evalue, MatchFunction) and evalue.fn(value)
+        )
+
+    def new_fn(results):
+        for v in selector.all_values():
+            if v.capture in results:
+                cap = results[v.capture]
+                for value in cap.values:
+                    if not check_value(v.value, value):
+                        return ABSENT
+        return fn(results)
+
+    return new_fn
+
+
 class Collector:
     def __init__(self, pattern, mapper=None, immediate=False):
         self.data = []
@@ -494,6 +492,9 @@ class Collector:
 
             def listener(kwargs):
                 self.data.append(kwargs)
+
+        if pattern.hasval:
+            listener = selector_filterer(self.pattern, listener)
 
         self._listener = listener
 
@@ -588,7 +589,10 @@ class StateOverlay:
     hasoutput = False
 
     def __init__(self, values):
-        self._rules = {patt: {"value": value} for patt, value in values.items()}
+        self._rules = {
+            patt: {"value": selector_filterer(select(patt), value)}
+            for patt, value in values.items()
+        }
 
     def rules(self):
         return self._rules

@@ -69,6 +69,9 @@ class Element(metaclass=InternedMC):
         else:
             return set()
 
+    def all_values(self):
+        return [self] if self.hasval else []
+
     def valid(self):
         if self.name is None:
             return self.focus
@@ -178,6 +181,12 @@ class Call(metaclass=InternedMC):
         rval = set()
         for x in self.captures + self.children:
             rval.update(x.all_captures())
+        return rval
+
+    def all_values(self):
+        rval = []
+        for x in self.captures + self.children:
+            rval += x.all_values()
         return rval
 
     def valid(self):
@@ -454,10 +463,9 @@ def make_equals(node, element, value, context, matchfn=False):
     if matchfn:
         value = VCall(MatchFunction, (value,))
     if isinstance(element, Element):
-        capture = element.capture if matchfn else None
-        return element.clone(value=value, capture=capture)
+        return element.clone(value=value, capture=element.capture)
     else:
-        new_element = Element(name="#value", value=value, capture=None)
+        new_element = Element(name="#value", value=value, capture="#value")
         return element.clone(captures=element.captures + (new_element,))
 
 
@@ -472,12 +480,10 @@ def make_symbol(node, context):
     if node.value == "*":
         element = Element(name=None)
     else:
-        value = node.value
-        cap = node.value[1:] if node.value.startswith("#") else node.value
         focus = context == "root"
         element = Element(
-            name=value,
-            capture=cap,
+            name=node.value,
+            capture=node.value,
             tags=frozenset({1}) if focus else frozenset(),
         )
     return element
