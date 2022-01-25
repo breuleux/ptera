@@ -5,7 +5,7 @@ from collections import deque
 from contextvars import ContextVar
 
 from .selector import Element, select
-from .selfless import ConflictError, Override, PteraNameError, override
+from .selfless import PteraNameError
 from .tags import match_tag
 from .utils import ABSENT, ACTIVE, COMPLETE, autocreate
 
@@ -375,40 +375,20 @@ class BaseOverlay:
 
 
 def interact(sym, key, category, value):
-    if isinstance(value, Override):
-        rval, vprio = value.value, value.priority
-    else:
-        rval, vprio = value, 0
-
     fr = Frame.top.get()
 
     if sym in fr.getters:
         fr_value = fr.get(sym, key, category, value)
         if fr_value is not ABSENT:
-            if isinstance(fr_value, Override):
-                fr_value, fprio = fr_value.value, fr_value.priority
-            else:
-                fr_value, fprio = fr_value, 0
+            value = fr_value
 
-            if rval is ABSENT:
-                rval = fr_value
-            elif vprio > fprio:
-                pass
-            elif vprio < fprio:
-                rval = fr_value
-            elif vprio == fprio:
-                raise ConflictError(
-                    f"Multiple values with same priority conflict for "
-                    f"variable '{sym}': {value}, {fr_value}"
-                )
-
-    if rval is ABSENT:
+    if value is ABSENT:
         raise PteraNameError(sym, fr.fn)
 
     if sym in fr.setters:
-        fr.set(sym, key, category, rval)
+        fr.set(sym, key, category, value)
 
-    return rval
+    return value
 
 
 class PluginWrapper:
@@ -602,21 +582,18 @@ class Overlay:
     def full_tap(self, *plugins, **kwplugins):
         return self.__use(plugins, kwplugins, False)
 
-    def tweak(self, values, priority=2):
-        values = {
-            select(k): lambda _, _v=v: override(_v, priority)
-            for k, v in values.items()
-        }
+    def tweak(self, values):
+        values = {select(k): (lambda _, _v=v: _v) for k, v in values.items()}
         self.plugins[f"#{len(self.plugins)}"] = StateOverlay(values)
         return self
 
-    def rewrite(self, values, full=False, priority=2):
+    def rewrite(self, values, full=False):
         def _wrapfn(fn, full=True):
             @functools.wraps(fn)
             def newfn(args):
                 if not full:
                     args = {k: v.value for k, v in args.items()}
-                return override(fn(args), priority=priority)
+                return fn(args)
 
             return newfn
 
@@ -635,14 +612,14 @@ class Overlay:
         return ol.full_tap(*plugins, **kwplugins)
 
     @autocreate
-    def tweaking(self, values, priority=2):
+    def tweaking(self, values):
         ol = Overlay(self.plugins)
-        return ol.tweak(values, priority=priority)
+        return ol.tweak(values)
 
     @autocreate
-    def rewriting(self, values, full=False, priority=2):
+    def rewriting(self, values, full=False):
         ol = Overlay(self.plugins)
-        return ol.rewrite(values, full=full, priority=priority)
+        return ol.rewrite(values, full=full)
 
     def collect(self, query):
         plugin = _to_plugin(query)
@@ -729,23 +706,19 @@ class PteraFunction:
         self.overlay.full_tap(*plugins, **kwplugins)
         return self
 
-    def tweak(self, values, priority=2):
-        self.overlay.tweak(values, priority=priority)
+    def tweak(self, values):
+        self.overlay.tweak(values)
         return self
 
-    def rewrite(self, values, full=False, priority=2):
-        self.overlay.rewrite(values, full=full, priority=priority)
+    def rewrite(self, values, full=False):
+        self.overlay.rewrite(values, full=full)
         return self
 
-    def tweaking(self, values, priority=2):
-        return self.clone(
-            overlay=self.overlay.tweaking(values, priority=priority)
-        )
+    def tweaking(self, values):
+        return self.clone(overlay=self.overlay.tweaking(values))
 
-    def rewriting(self, values, full=False, priority=2):
-        return self.clone(
-            overlay=self.overlay.rewriting(values, full=full, priority=priority)
-        )
+    def rewriting(self, values, full=False):
+        return self.clone(overlay=self.overlay.rewriting(values, full=full))
 
     def using(self, *plugins, **kwplugins):
         ol = self.overlay.using(*plugins, **kwplugins)

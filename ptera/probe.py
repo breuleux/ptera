@@ -6,7 +6,6 @@ from giving import SourceProxy
 from .core import BaseOverlay
 from .deco import tooled
 from .selector import select
-from .selfless import override
 from .tags import tag
 from .utils import ABSENT
 
@@ -145,7 +144,7 @@ class Probe(SourceProxy):
                 return value
 
         def _override(data):
-            self._root._value = override(setter(data))
+            self._root._value = setter(data)
 
         return self.subscribe(_override)
 
@@ -175,7 +174,7 @@ class Probe(SourceProxy):
         """
 
         def _override(data):
-            self._root._value = override(setter(**data))
+            self._root._value = setter(**data)
 
         return self.subscribe(_override)
 

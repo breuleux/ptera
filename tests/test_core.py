@@ -5,7 +5,6 @@ import pytest
 from ptera import BaseOverlay, Overlay, select, tag, tooled
 from ptera.core import Capture, Tap, selector_filterer
 from ptera.selector import Element, parse
-from ptera.selfless import default
 from ptera.tools import every  # noqa
 
 from .common import one_test_per_assert
@@ -577,7 +576,7 @@ def test_generator():
 
 @tooled
 def multitag():
-    y: tag.Bouffe = default(10)
+    y: tag.Bouffe = 10
     y = y * y
     return y
 
