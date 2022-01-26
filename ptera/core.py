@@ -162,7 +162,7 @@ class BaseAccumulator:
         else:
             return self.captures[element.capture]
 
-    def build_all(self):
+    def build(self):
         if self.parent is None:
             return self.captures
         rval = {}
@@ -171,11 +171,6 @@ class BaseAccumulator:
             rval.update(curr.captures)
             curr = curr.parent
         return rval
-
-    def build(self):
-        return {
-            k: v for k, v in self.build_all().items() if not k.startswith("/")
-        }
 
     def leaves(self):
         if isinstance(self.pattern, Element):
@@ -203,9 +198,7 @@ class TotalAccumulator(BaseAccumulator):
 
     def run(self):
         args = self.build()
-        if set(args) != self.names:
-            return ABSENT
-        else:
+        if set(args) == self.names:
             return self.func(args)
 
     def close(self):
@@ -216,8 +209,8 @@ class TotalAccumulator(BaseAccumulator):
 
 
 class ImmediateAccumulator(BaseAccumulator):
-    def build_all(self):
-        return {k: cap.snapshot() for k, cap in super().build_all().items()}
+    def build(self):
+        return {k: cap.snapshot() for k, cap in super().build().items()}
 
     def log(self, element, varname, category, value):
         cap = self.getcap(element)
