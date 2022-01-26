@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from .selector import Element, select
 from .selfless import PteraNameError
 from .tags import match_tag
-from .utils import ABSENT, ACTIVE, COMPLETE, autocreate
+from .utils import ABSENT, autocreate
 
 _pattern_fit_cache = {}
 
@@ -36,16 +36,14 @@ class Frame:
 
     def log(self, varname, key, category, value):
         for element, acc in self.loggers[varname]:
-            if acc.status is ACTIVE:
-                acc.log(element, varname, category, value)
+            acc.log(element, varname, category, value)
 
     def intercept(self, varname, key, category, tentative):
         rval = ABSENT
         for element, acc in self.interceptors[varname]:
-            if acc.status is ACTIVE:
-                tmp = acc.intercept(element, varname, category, tentative)
-                if tmp is not ABSENT:
-                    rval = tmp
+            tmp = acc.intercept(element, varname, category, tentative)
+            if tmp is not ABSENT:
+                rval = tmp
         return rval
 
     def exit(self):
@@ -113,7 +111,6 @@ class BaseAccumulator:
         self.children = []
         self.func = func
         self.captures = {}
-        self.status = ACTIVE
         self.template = template
         if self.parent is None:
             self.names = set(pattern.all_captures)
@@ -182,12 +179,10 @@ class TotalAccumulator(BaseAccumulator):
             return self.func(args)
 
     def close(self):
-        if self.status is ACTIVE:
-            if self.parent is None:
-                leaves = self.leaves()
-                for leaf in leaves or [self]:
-                    leaf.run()
-            self.status = COMPLETE
+        if self.parent is None:
+            leaves = self.leaves()
+            for leaf in leaves or [self]:
+                leaf.run()
 
 
 class ImmediateAccumulator(BaseAccumulator):
