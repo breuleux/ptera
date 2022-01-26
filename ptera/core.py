@@ -66,8 +66,7 @@ class _WorkingFrame:
 
     def log(self, value):
         for element, acc in self.accumulators:
-            if acc.log:
-                acc.log(element, self.varname, self.category, value)
+            acc.log(element, self.varname, self.category, value)
 
     def trigger(self):
         for element, acc in self.accumulators:
@@ -129,13 +128,37 @@ class Capture:
 
 
 class BaseAccumulator:
-    def __init__(self, *, pattern, func, parent=None, template=True):
+    def __init__(
+        self,
+        *,
+        pattern,
+        intercept=None,
+        trigger=None,
+        close=None,
+        parent=None,
+        template=True,
+    ):
+        pattern = select(pattern)
+
         self.pattern = pattern
         self.parent = parent
-        self.children = []
-        self.func = func
-        self.captures = {}
         self.template = template
+
+        self._intercept = intercept
+        if intercept is None:
+            self.intercept = None
+
+        self._trigger = trigger
+        if trigger is None:
+            self.trigger = None
+
+        self._close = close
+        if close is None:
+            self.close = None
+
+        self.children = []
+        self.captures = {}
+
         if self.parent is None:
             self.names = set(pattern.all_captures)
         else:
@@ -145,10 +168,12 @@ class BaseAccumulator:
     def fork(self, pattern=None):
         parent = None if self.template else self
         return type(self)(
-            parent=parent,
-            func=self.func,
-            template=False,
             pattern=pattern or self.pattern,
+            intercept=self._intercept,
+            trigger=self._trigger,
+            close=self._close,
+            parent=parent,
+            template=False,
         )
 
     def accumulator_for(self, element):
@@ -172,6 +197,43 @@ class BaseAccumulator:
             curr = curr.parent
         return rval
 
+    def _call_with_snapshot(self, fn):
+        args = {k: cap.snapshot() for k, cap in self.build().items()}
+        return fn(args)
+
+    def log(self, element, varname, category, value):
+        raise NotImplementedError()
+
+    def intercept(self, element, varname, category, tentative):
+        cap = Capture(element)
+        self.captures[element.capture] = cap
+        cap.names.append(varname)
+        cap.set(varname, tentative)
+        rval = self._call_with_snapshot(self._intercept)
+        del self.captures[element.capture]
+        return rval
+
+    def trigger(self):
+        self._call_with_snapshot(self._trigger)
+
+    def close(self):
+        raise NotImplementedError()
+
+
+class Total(BaseAccumulator):
+    def __init__(self, pattern, close, trigger=None, **kwargs):
+        super().__init__(
+            pattern=pattern, trigger=trigger, close=close, **kwargs
+        )
+
+    def accumulator_for(self, element):
+        return self.fork(pattern=element) if element.focus else self
+
+    def log(self, element, varname, category, value):
+        cap = self.getcap(element)
+        cap.accum(varname, value)
+        return self
+
     def leaves(self):
         if isinstance(self.pattern, Element):
             return [self]
@@ -181,83 +243,27 @@ class BaseAccumulator:
                 rval += child.leaves()
             return rval
 
-    log = None
-    intercept = None
-    trigger = None
-    close = None
-
-
-class TotalAccumulator(BaseAccumulator):
-    def accumulator_for(self, element):
-        return self.fork(pattern=element) if element.focus else self
-
-    def log(self, element, varname, category, value):
-        cap = self.getcap(element)
-        cap.accum(varname, value)
-        return self
-
-    def run(self):
-        args = self.build()
-        if set(args) == self.names:
-            return self.func(args)
-
     def close(self):
         if self.parent is None:
             leaves = self.leaves()
             for leaf in leaves or [self]:
-                leaf.run()
+                args = leaf.build()
+                if set(args) == leaf.names:
+                    leaf._close(args)
 
 
-class ImmediateAccumulator(BaseAccumulator):
-    def build(self):
-        return {k: cap.snapshot() for k, cap in super().build().items()}
+class Immediate(BaseAccumulator):
+    def __init__(self, pattern, trigger=None, **kwargs):
+        super().__init__(pattern=pattern, trigger=trigger, **kwargs)
 
     def log(self, element, varname, category, value):
         cap = self.getcap(element)
         cap.set(varname, value)
         return self
 
-    def run(self):
-        return self.func(self.build())
 
-
-class LogAccumulator(ImmediateAccumulator):
-    def trigger(self):
-        self.run()
-
-
-class InterceptAccumulator(ImmediateAccumulator):
-    def intercept(self, element, varname, category, tentative):
-        cap = Capture(element)
-        self.captures[element.capture] = cap
-        cap.names.append(varname)
-        cap.set(varname, tentative)
-        rval = self.run()
-        del self.captures[element.capture]
-        return rval
-
-
-accumulator_classes = {
-    "listeners": TotalAccumulator,
-    "immediate": LogAccumulator,
-    "value": InterceptAccumulator,
-}
-
-
-def iterate_pattern_dict(*rulesets):
-    for rules in rulesets:
-        for pattern, triggers in rules.items():
-            pattern = select(pattern)
-            for name, entries in triggers.items():
-                if not isinstance(entries, (tuple, list)):
-                    entries = [entries]
-                for entry in entries:
-                    acc = accumulator_classes[name](pattern=pattern, func=entry)
-                    yield (pattern, acc)
-
-
-def dict_to_collection(*rulesets):
-    return PatternCollection(iterate_pattern_dict(*rulesets))
+def Override(pattern, intercept, trigger=None):
+    return Immediate(pattern, trigger, intercept=intercept)
 
 
 def check_element(el, name, category):
@@ -349,15 +355,15 @@ class proceed:
 
 
 class BaseOverlay:
-    def __init__(self, *rulesets):
-        self.rulesets = [rules for rules in rulesets if rules]
+    def __init__(self, *handlers):
+        self.handlers = [(h.pattern, h) for h in handlers]
 
     def __enter__(self):
-        if not self.rulesets:
+        if not self.handlers:
             return None
 
         else:
-            collection = dict_to_collection(*self.rulesets)
+            collection = PatternCollection(self.handlers)
             curr = PatternCollection.current.get()
             if curr is not None:
                 collection.patterns = curr.patterns + collection.patterns
@@ -365,7 +371,7 @@ class BaseOverlay:
             return collection
 
     def __exit__(self, typ, exc, tb):
-        if self.rulesets:
+        if self.handlers:
             PatternCollection.current.reset(self.reset)
 
 
@@ -425,7 +431,7 @@ class Collector:
         self.data = []
         self.pattern = pattern
         self.mapper = mapper
-        self.rulename = "immediate" if immediate else "listeners"
+        self.ruleclass = Immediate if immediate else Total
 
         if self.mapper:
 
@@ -491,7 +497,7 @@ class Collector:
         )
 
     def rules(self):
-        return {self.pattern: {self.rulename: [self._listener]}}
+        return [self.ruleclass(self.pattern, self._listener)]
 
     def finalize(self):
         if self.mapper:
@@ -535,10 +541,10 @@ class StateOverlay:
     hasoutput = False
 
     def __init__(self, values):
-        self._rules = {
-            patt: {"value": selector_filterer(select(patt), value)}
+        self._rules = [
+            Immediate(patt, intercept=selector_filterer(select(patt), value))
             for patt, value in values.items()
-        }
+        ]
 
     def rules(self):
         return self._rules
@@ -644,7 +650,7 @@ class Overlay:
         rulesets = []
         plugins = {name: p.instantiate() for name, p in self.plugins.items()}
         for plugin in plugins.values():
-            rulesets.append(plugin.rules())
+            rulesets.extend(plugin.rules())
         self._ol = BaseOverlay(*rulesets)
         self._ol.__enter__()
         self._results = CallResults()

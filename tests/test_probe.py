@@ -4,7 +4,7 @@ import pytest
 import rx
 
 from ptera import tooled
-from ptera.core import BaseOverlay
+from ptera.core import BaseOverlay, Total
 from ptera.probe import global_probe, probing
 
 from .milk import cheese as ch, gouda
@@ -295,7 +295,7 @@ def test_probe_in_overlay():
     def listener(args):
         results.append({name: cap.values for name, cap in args.items()})
 
-    with BaseOverlay({"fT > a": {"listeners": listener}}):
+    with BaseOverlay(Total("fT > a", listener)):
         fT(5)
         with probing("fT > a") as probe:
             results2 = probe.accum()
@@ -315,7 +315,7 @@ def test_overlay_in_probe():
     with probing("fT > a") as probe:
         results2 = probe.accum()
         fT(5)
-        with BaseOverlay({"fT > a": {"listeners": listener}}):
+        with BaseOverlay(Total("fT > a", listener)):
             fT(6)
         fT(7)
 

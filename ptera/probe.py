@@ -3,7 +3,7 @@ import inspect
 
 from giving import SourceProxy
 
-from .core import BaseOverlay
+from .core import BaseOverlay, Immediate
 from .deco import tooled
 from .selector import select
 from .tags import tag
@@ -96,9 +96,10 @@ class Probe(SourceProxy):
                 select(selector, env_wrapper=make_resolver)
                 for selector in selectors
             ]
-            self._ol = BaseOverlay(
-                {sel: {"value": self._emit} for sel in self._selectors}
-            )
+            rules = [
+                Immediate(sel, intercept=self._emit) for sel in self._selectors
+            ]
+            self._ol = BaseOverlay(*rules)
             self._raw = raw
             self._activated = False
 

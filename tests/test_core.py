@@ -3,7 +3,7 @@ import sys
 import pytest
 
 from ptera import BaseOverlay, Overlay, select, tag, tooled
-from ptera.core import Capture, Tap, selector_filterer
+from ptera.core import Capture, Immediate, Tap, Total, selector_filterer
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
 
@@ -50,14 +50,12 @@ class GrabAll:
                 {name: cap.values for name, cap in args.items()}
             )
 
-        self.rules = {
-            pattern: {"listeners": selector_filterer(pattern, listener)}
-        }
+        self.rule = Total(pattern, selector_filterer(pattern, listener))
 
 
 def _test(f, args, pattern):
     store = GrabAll(pattern)
-    with BaseOverlay(store.rules):
+    with BaseOverlay(store.rule):
         f(*args)
     return store.results
 
@@ -210,15 +208,15 @@ def test_nested_overlay():
 
     storex = GrabAll("brie > x")
     storey = GrabAll("brie > y")
-    with BaseOverlay({**storex.rules, **storey.rules}):
+    with BaseOverlay(storex.rule, storey.rule):
         assert double_brie(2, 10) == 236
     assert storex.results == expectedx
     assert storey.results == expectedy
 
     storex = GrabAll("brie > x")
     storey = GrabAll("brie > y")
-    with BaseOverlay(storex.rules):
-        with BaseOverlay(storey.rules):
+    with BaseOverlay(storex.rule):
+        with BaseOverlay(storey.rule):
             assert double_brie(2, 10) == 236
     assert storex.results == expectedx
     assert storey.results == expectedy
@@ -231,11 +229,13 @@ def mystery(hat):
 
 
 def test_provide_var():
-    with BaseOverlay({"mystery(!surprise)": {"value": lambda _: 4}}):
+    with BaseOverlay(Immediate("mystery(!surprise)", intercept=lambda _: 4)):
         assert mystery(10) == 40
 
     with BaseOverlay(
-        {"mystery(hat, !surprise)": {"value": lambda args: args["hat"].value}}
+        Immediate(
+            "mystery(hat, !surprise)", intercept=lambda args: args["hat"].value
+        )
     ):
         assert mystery(8) == 64
 
@@ -473,7 +473,7 @@ def test_method():
         assert siamese.meow() == "meoowwwwwww meoowwwwwww"
 
     store = GrabAll("Matou.meow(repeat) > os")
-    with BaseOverlay(store.rules):
+    with BaseOverlay(store.rule):
         for i in range(3):
             siamese.meow(i)
     assert store.results == [
@@ -494,7 +494,7 @@ def test_redirect_method():
         assert siamese.meow_nodeco() == "meeeowwwwwww"
 
     store = GrabAll("Matou.meow_nodeco(repeat) > os")
-    with BaseOverlay(store.rules):
+    with BaseOverlay(store.rule):
         for i in range(3):
             siamese.meow_nodeco(i)
     assert store.results == [
