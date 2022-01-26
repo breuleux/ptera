@@ -19,31 +19,31 @@ class Frame:
     def __init__(self, fn):
         self.fn = fn
         self.accumulators = set()
-        self.getters = {}
-        self.setters = {}
+        self.interceptors = {}
+        self.loggers = {}
         self.to_close = []
 
     def register(self, acc, captures, close_at_exit):
         for cap, varnames in captures.items():
             for v in varnames:
                 self.accumulators.add(v)
-                if acc.varget and cap.focus:
-                    self.getters.setdefault(v, []).append((cap, acc))
-                else:
-                    self.setters.setdefault(v, []).append((cap, acc))
+                if acc.intercept and cap.focus:
+                    self.interceptors.setdefault(v, []).append((cap, acc))
+                if acc.log:
+                    self.loggers.setdefault(v, []).append((cap, acc))
         if close_at_exit and acc.close:
             self.to_close.append(acc)
 
-    def set(self, varname, key, category, value):
-        for element, acc in self.setters[varname]:
+    def log(self, varname, key, category, value):
+        for element, acc in self.loggers[varname]:
             if acc.status is ACTIVE:
-                acc.varset(element, varname, category, value)
+                acc.log(element, varname, category, value)
 
-    def get(self, varname, key, category, tentative):
+    def intercept(self, varname, key, category, tentative):
         rval = ABSENT
-        for element, acc in self.getters[varname]:
+        for element, acc in self.interceptors[varname]:
             if acc.status is ACTIVE:
-                tmp = acc.varget(element, varname, category, tentative)
+                tmp = acc.intercept(element, varname, category, tentative)
                 if tmp is not ABSENT:
                     rval = tmp
         return rval
@@ -160,8 +160,9 @@ class BaseAccumulator:
         return rval
 
     def build(self):
-        rval = self.build_all()
-        return rval and {k: v for k, v in rval.items() if not k.startswith("/")}
+        return {
+            k: v for k, v in self.build_all().items() if not k.startswith("/")
+        }
 
     def leaves(self):
         if isinstance(self.pattern, Element) and self.focus:
@@ -172,13 +173,13 @@ class BaseAccumulator:
                 rval += child.leaves()
             return rval
 
-    varset = None
-    varget = None
+    log = None
+    intercept = None
     close = None
 
 
 class TotalAccumulator(BaseAccumulator):
-    def varset(self, element, varname, category, value):
+    def log(self, element, varname, category, value):
         acc = self.fork(pattern=element) if element.focus else self
         cap = acc.getcap(element)
         cap.accum(varname, value)
@@ -204,31 +205,26 @@ class ImmediateAccumulator(BaseAccumulator):
     def build_all(self):
         return {k: cap.snapshot() for k, cap in super().build_all().items()}
 
-    def varset(self, element, varname, category, value):
+    def log(self, element, varname, category, value):
         acc = self.fork(pattern=element) if element.focus else self
         cap = acc.getcap(element)
         cap.set(varname, value)
         return acc
 
     def run(self):
-        rval = ABSENT
-        args = self.build()
-        if args is None:
-            return ABSENT
-        rval = self.func(args)
-        return rval
+        return self.func(self.build())
 
 
-class SetterAccumulator(ImmediateAccumulator):
-    def varset(self, element, varname, category, value):
-        acc = super().varset(element, varname, category, value)
+class LogAccumulator(ImmediateAccumulator):
+    def log(self, element, varname, category, value):
+        acc = super().log(element, varname, category, value)
         if acc and element.focus:
             acc.run()
         return acc
 
 
-class GetterAccumulator(ImmediateAccumulator):
-    def varget(self, element, varname, category, tentative):
+class InterceptAccumulator(ImmediateAccumulator):
+    def intercept(self, element, varname, category, tentative):
         if not check_element(element, varname, category):
             return ABSENT
         cap = Capture(element)
@@ -242,8 +238,8 @@ class GetterAccumulator(ImmediateAccumulator):
 
 accumulator_classes = {
     "listeners": TotalAccumulator,
-    "immediate": SetterAccumulator,
-    "value": GetterAccumulator,
+    "immediate": LogAccumulator,
+    "value": InterceptAccumulator,
 }
 
 
@@ -377,16 +373,16 @@ class BaseOverlay:
 def interact(sym, key, category, value):
     fr = Frame.top.get()
 
-    if sym in fr.getters:
-        fr_value = fr.get(sym, key, category, value)
+    if sym in fr.interceptors:
+        fr_value = fr.intercept(sym, key, category, value)
         if fr_value is not ABSENT:
             value = fr_value
 
     if value is ABSENT:
         raise PteraNameError(sym, fr.fn)
 
-    if sym in fr.setters:
-        fr.set(sym, key, category, value)
+    if sym in fr.loggers:
+        fr.log(sym, key, category, value)
 
     return value
 
