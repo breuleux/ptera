@@ -1,7 +1,7 @@
 import functools
 import inspect
 import time
-from collections import deque
+from collections import defaultdict, deque
 from contextvars import ContextVar
 
 from .selector import Element, select
@@ -16,39 +16,63 @@ class Frame:
 
     top = ContextVar("Frame.top", default=None)
 
-    def __init__(self, fn):
+    def __init__(self, fn, accumulators=None):
         self.fn = fn
-        self.accumulators = set()
-        self.interceptors = {}
-        self.loggers = {}
+        self.accumulators = accumulators or defaultdict(list)
         self.to_close = []
 
     def register(self, acc, captures, close_at_exit):
-        for cap, varnames in captures.items():
+        for element, varnames in captures.items():
             for v in varnames:
-                self.accumulators.add(v)
-                if acc.intercept and cap.focus:
-                    self.interceptors.setdefault(v, []).append((cap, acc))
-                if acc.log:
-                    self.loggers.setdefault(v, []).append((cap, acc))
+                self.accumulators[v].append((element, acc))
         if close_at_exit and acc.close:
             self.to_close.append(acc)
 
-    def log(self, varname, key, category, value):
-        for element, acc in self.loggers[varname]:
-            acc.log(element, varname, category, value)
-
-    def intercept(self, varname, key, category, tentative):
-        rval = ABSENT
-        for element, acc in self.interceptors[varname]:
-            tmp = acc.intercept(element, varname, category, tentative)
-            if tmp is not ABSENT:
-                rval = tmp
-        return rval
+    def work_on(self, varname, key, category):
+        return _WorkingFrame(varname, key, category, self.accumulators)
 
     def exit(self):
         for acc in self.to_close:
             acc.close()
+
+
+class _WorkingFrame:
+    def __init__(self, varname, key, category, accumulators):
+        self.varname = varname
+        self.key = key
+        self.category = category
+        self.accumulators = [
+            (element, acc.accumulator_for(element))
+            for element, acc in accumulators.get(varname, [])
+            if check_element(element, varname, category)
+        ]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        pass
+
+    def intercept(self, tentative):
+        rval = ABSENT
+        for element, acc in self.accumulators:
+            if element.focus and acc.intercept:
+                tmp = acc.intercept(
+                    element, self.varname, self.category, tentative
+                )
+                if tmp is not ABSENT:
+                    rval = tmp
+        return rval
+
+    def log(self, value):
+        for element, acc in self.accumulators:
+            if acc.log:
+                acc.log(element, self.varname, self.category, value)
+
+    def trigger(self):
+        for element, acc in self.accumulators:
+            if element.focus and acc.trigger:
+                acc.trigger()
 
 
 class Capture:
@@ -127,6 +151,9 @@ class BaseAccumulator:
             pattern=pattern or self.pattern,
         )
 
+    def accumulator_for(self, element):
+        return self
+
     def getcap(self, element):
         if element.capture not in self.captures:
             cap = Capture(element)
@@ -161,15 +188,18 @@ class BaseAccumulator:
 
     log = None
     intercept = None
+    trigger = None
     close = None
 
 
 class TotalAccumulator(BaseAccumulator):
+    def accumulator_for(self, element):
+        return self.fork(pattern=element) if element.focus else self
+
     def log(self, element, varname, category, value):
-        acc = self.fork(pattern=element) if element.focus else self
-        cap = acc.getcap(element)
+        cap = self.getcap(element)
         cap.accum(varname, value)
-        return acc
+        return self
 
     def run(self):
         args = self.build()
@@ -190,27 +220,21 @@ class ImmediateAccumulator(BaseAccumulator):
         return {k: cap.snapshot() for k, cap in super().build_all().items()}
 
     def log(self, element, varname, category, value):
-        acc = self.fork(pattern=element) if element.focus else self
-        cap = acc.getcap(element)
+        cap = self.getcap(element)
         cap.set(varname, value)
-        return acc
+        return self
 
     def run(self):
         return self.func(self.build())
 
 
 class LogAccumulator(ImmediateAccumulator):
-    def log(self, element, varname, category, value):
-        acc = super().log(element, varname, category, value)
-        if acc and element.focus:
-            acc.run()
-        return acc
+    def trigger(self):
+        self.run()
 
 
 class InterceptAccumulator(ImmediateAccumulator):
     def intercept(self, element, varname, category, tentative):
-        if not check_element(element, varname, category):
-            return ABSENT
         cap = Capture(element)
         self.captures[element.capture] = cap
         cap.names.append(varname)
@@ -355,16 +379,17 @@ class BaseOverlay:
 def interact(sym, key, category, value):
     fr = Frame.top.get()
 
-    if sym in fr.interceptors:
-        fr_value = fr.intercept(sym, key, category, value)
+    with fr.work_on(sym, key, category) as wfr:
+
+        fr_value = wfr.intercept(value)
         if fr_value is not ABSENT:
             value = fr_value
 
-    if value is ABSENT:
-        raise PteraNameError(sym, fr.fn)
+        if value is ABSENT:
+            raise PteraNameError(sym, fr.fn)
 
-    if sym in fr.loggers:
-        fr.log(sym, key, category, value)
+        wfr.log(value)
+        wfr.trigger()
 
     return value
 
