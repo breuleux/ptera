@@ -3,7 +3,7 @@ import sys
 import pytest
 
 from ptera import BaseOverlay, Overlay, select, tag, tooled
-from ptera.core import Capture, Immediate, Tap, Total, selector_filterer
+from ptera.core import Capture, Immediate, Tap, Total
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
 
@@ -50,7 +50,7 @@ class GrabAll:
                 {name: cap.values for name, cap in args.items()}
             )
 
-        self.rule = Total(pattern, selector_filterer(pattern, listener))
+        self.rule = Total(pattern, listener)
 
 
 def _test(f, args, pattern):

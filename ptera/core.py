@@ -137,6 +137,7 @@ class BaseAccumulator:
         close=None,
         parent=None,
         template=True,
+        check=True,
     ):
         pattern = select(pattern)
 
@@ -144,15 +145,15 @@ class BaseAccumulator:
         self.parent = parent
         self.template = template
 
-        self._intercept = intercept
+        self._intercept = self.__check(intercept, check)
         if intercept is None:
             self.intercept = None
 
-        self._trigger = trigger
+        self._trigger = self.__check(trigger, check)
         if trigger is None:
             self.trigger = None
 
-        self._close = close
+        self._close = self.__check(close, check)
         if close is None:
             self.close = None
 
@@ -165,6 +166,15 @@ class BaseAccumulator:
             self.names = self.parent.names
             self.parent.children.append(self)
 
+    def __check(self, fn, check):
+        def new_fn(results):
+            if self.pattern.check_captures(results):
+                return fn(results)
+            else:
+                return ABSENT
+
+        return new_fn if (fn and check and self.pattern.hasval) else fn
+
     def fork(self, pattern=None):
         parent = None if self.template else self
         return type(self)(
@@ -174,6 +184,7 @@ class BaseAccumulator:
             close=self._close,
             parent=parent,
             template=False,
+            check=False,  # Functions are already wrapped
         )
 
     def accumulator_for(self, element):
@@ -416,16 +427,6 @@ class ActivePluginWrapper:
         return self.fn(rval)
 
 
-def selector_filterer(selector, fn):
-    def new_fn(results):
-        if selector.check_captures(results):
-            return fn(results)
-        else:
-            return ABSENT
-
-    return new_fn
-
-
 class Collector:
     def __init__(self, pattern, mapper=None, immediate=False):
         self.data = []
@@ -444,9 +445,6 @@ class Collector:
 
             def listener(kwargs):
                 self.data.append(kwargs)
-
-        if pattern.hasval:
-            listener = selector_filterer(self.pattern, listener)
 
         self._listener = listener
 
@@ -542,8 +540,7 @@ class StateOverlay:
 
     def __init__(self, values):
         self._rules = [
-            Immediate(patt, intercept=selector_filterer(select(patt), value))
-            for patt, value in values.items()
+            Immediate(patt, intercept=value) for patt, value in values.items()
         ]
 
     def rules(self):
