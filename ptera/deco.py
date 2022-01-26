@@ -1,7 +1,7 @@
 from itertools import count
 
 from .core import PteraFunction, interact
-from .selfless import transform
+from .transform import transform
 
 _c = count()
 

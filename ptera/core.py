@@ -5,8 +5,8 @@ from collections import defaultdict, deque
 from contextvars import ContextVar
 
 from .selector import Element, select
-from .selfless import PteraNameError
 from .tags import match_tag
+from .transform import PteraNameError
 from .utils import ABSENT, autocreate
 
 _pattern_fit_cache = {}
@@ -184,7 +184,7 @@ class BaseAccumulator:
             close=self._close,
             parent=parent,
             template=False,
-            check=False,  # Functions are already wrapped
+            check=False,  # False, because functions are already wrapped
         )
 
     def accumulator_for(self, element):
@@ -212,7 +212,7 @@ class BaseAccumulator:
         args = {k: cap.snapshot() for k, cap in self.build().items()}
         return fn(args)
 
-    def log(self, element, varname, category, value):
+    def log(self, element, varname, category, value):  # pragma: no cover
         raise NotImplementedError()
 
     def intercept(self, element, varname, category, tentative):
@@ -227,7 +227,7 @@ class BaseAccumulator:
     def trigger(self):
         self._call_with_snapshot(self._trigger)
 
-    def close(self):
+    def close(self):  # pragma: no cover
         raise NotImplementedError()
 
 
@@ -271,10 +271,6 @@ class Immediate(BaseAccumulator):
         cap = self.getcap(element)
         cap.set(varname, value)
         return self
-
-
-def Override(pattern, intercept, trigger=None):
-    return Immediate(pattern, trigger, intercept=intercept)
 
 
 def check_element(el, name, category):
