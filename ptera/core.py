@@ -107,16 +107,7 @@ class Capture:
 
 
 class BaseAccumulator:
-    def __init__(
-        self,
-        *,
-        pattern,
-        func,
-        parent=None,
-        template=True,
-        focus=True,
-    ):
-        assert focus
+    def __init__(self, *, pattern, func, parent=None, template=True):
         self.pattern = pattern
         self.parent = parent
         self.children = []
@@ -124,21 +115,19 @@ class BaseAccumulator:
         self.captures = {}
         self.status = ACTIVE
         self.template = template
-        self.focus = focus
         if self.parent is None:
             self.names = set(pattern.all_captures)
         else:
             self.names = self.parent.names
             self.parent.children.append(self)
 
-    def fork(self, focus=True, pattern=None):
+    def fork(self, pattern=None):
         parent = None if self.template else self
         return type(self)(
             parent=parent,
             func=self.func,
             template=False,
-            pattern=pattern,
-            focus=focus,
+            pattern=pattern or self.pattern,
         )
 
     def getcap(self, element):
@@ -165,7 +154,7 @@ class BaseAccumulator:
         }
 
     def leaves(self):
-        if isinstance(self.pattern, Element) and self.focus:
+        if isinstance(self.pattern, Element):
             return [self]
         else:
             rval = []
@@ -318,9 +307,7 @@ class PatternCollection:
             if capmap is not False:
                 is_template = acc.template
                 if pattern.focus or is_template:
-                    acc = acc.fork(
-                        focus=pattern.focus or is_template, pattern=pattern
-                    )
+                    acc = acc.fork()
                 frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
                     if child.collapse:
