@@ -179,15 +179,13 @@ class Call(ElementBase):
         "children": (),
         "captures": (),
         "immediate": False,
-        "collapse": False,
     }
 
-    def __init__(self, *, element, children, captures, immediate, collapse):
+    def __init__(self, *, element, children, captures, immediate):
         self.element = element
         self.children = children
         self.captures = captures
         self.immediate = immediate
-        self.collapse = collapse
 
     @cached_property
     def focus(self):
@@ -235,7 +233,6 @@ class Call(ElementBase):
             "children": self.children,
             "captures": self.captures,
             "immediate": self.immediate,
-            "collapse": self.collapse,
             **changes,
         }
         return Call(**args)

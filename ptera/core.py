@@ -325,10 +325,12 @@ class PatternCollection:
                     acc = acc.fork()
                 frame.register(acc, capmap, close_at_exit=is_template)
                 for child in pattern.children:
-                    if child.collapse:
-                        to_process.append((child, acc))
-                    else:
-                        next_patterns.append((child, acc))
+                    # if child.collapse:
+                    #     # This feature is related to the >> operator which
+                    #     # has been removed.
+                    #     to_process.append((child, acc))
+                    # else:
+                    next_patterns.append((child, acc))
         rval = PatternCollection(next_patterns)
         return frame, rval
 
