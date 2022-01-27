@@ -7,13 +7,25 @@ import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
 from copy import deepcopy
+from itertools import count
 from textwrap import dedent
 from types import TracebackType
 
 from .tags import get_tags
 from .utils import ABSENT
 
-idx = 0
+_IDX = count()
+
+
+class Key:
+    def __init__(self, type, value):
+        self.type = type
+        self.value = value
+
+    def __str__(self):  # pragma: no cover
+        return f"<Key {self.type}={self.value!r}>"
+
+    __repr__ = __str__
 
 
 class PteraNameError(NameError):
@@ -81,9 +93,7 @@ def readline_mock(src):
 
 def gensym():
     """Generate a fresh symbol."""
-    global idx
-    idx += 1
-    return f"_ptera_tmp_{idx}"
+    return f"_ptera__{next(_IDX)}"
 
 
 class ExternalVariableCollector(NodeVisitor):
@@ -154,7 +164,7 @@ class PteraTransformer(NodeTransformer):
     after instantiation of the PteraTransformer.
     """
 
-    def __init__(self, tree, comments):
+    def __init__(self, tree, comments, prefix):
         super().__init__()
         evc = ExternalVariableCollector(comments, tree)
         self.vardoc = evc.vardoc
@@ -167,6 +177,7 @@ class PteraTransformer(NodeTransformer):
         self.annotated = {}
         self.linenos = {}
         self.defaults = {}
+        self.prefix = prefix
         self.result = self.visit_FunctionDef(tree, root=True)
 
     def _ann(self, ann):
@@ -184,6 +195,17 @@ class PteraTransformer(NodeTransformer):
     def _absent(self):
         """Create a Name that represents the lack of a value."""
         return ast.Name(id="__ptera_ABSENT", ctx=ast.Load())
+
+    def _wrap_call(self, sym, *args):
+        args = [
+            (a if isinstance(a, ast.AST) else ast.Constant(value=a))
+            for a in args
+        ]
+        return ast.Call(
+            func=ast.Name(id=sym, ctx=ast.Load()),
+            args=list(args),
+            keywords=[],
+        )
 
     def make_interaction(self, target, ann, value, orig=None, expression=False):
         """Create code for setting the value of a variable."""
@@ -206,7 +228,16 @@ class PteraTransformer(NodeTransformer):
             slc = slc.value if isinstance(target.slice, ast.Index) else slc
             value_args = [
                 ast.Constant(value=target.value.id),
-                deepcopy(slc),
+                self._wrap_call("__ptera_Key", "index", deepcopy(slc)),
+                ann_arg,
+                value_arg,
+            ]
+        elif isinstance(target, ast.Attribute) and isinstance(
+            target.value, ast.Name
+        ):
+            value_args = [
+                ast.Constant(value=target.value.id),
+                self._wrap_call("__ptera_Key", "attr", target.attr),
                 ann_arg,
                 value_arg,
             ]
@@ -217,7 +248,7 @@ class PteraTransformer(NodeTransformer):
             new_value = value
         else:
             new_value = ast.Call(
-                func=ast.Name(id="__ptera_interact", ctx=ast.Load()),
+                func=ast.Name(id=f"{self.prefix}_interact", ctx=ast.Load()),
                 args=value_args,
                 keywords=[],
             )
@@ -296,7 +327,7 @@ class PteraTransformer(NodeTransformer):
 
         new_body = self.generate_interactions(node.args)
 
-        for external in self.external:
+        for external in sorted(self.external):
             new_body.extend(
                 self.make_interaction(
                     target=ast.Name(id=external, ctx=ast.Store()),
@@ -368,7 +399,7 @@ class PteraTransformer(NodeTransformer):
 
     def visit_Return(self, node):
         new_value = ast.Call(
-            func=ast.Name(id="__ptera_interact", ctx=ast.Load()),
+            func=ast.Name(id=f"{self.prefix}_interact", ctx=ast.Load()),
             args=[
                 ast.Constant(value="#value"),
                 ast.Constant(value=None),
@@ -537,7 +568,8 @@ def transform(fn, interact):
     tree = tree.body[0]
     assert isinstance(tree, ast.FunctionDef)
     tree.decorator_list = []
-    transformer = PteraTransformer(tree, comments)
+    prefix = gensym()
+    transformer = PteraTransformer(tree, comments, prefix)
     new_tree = transformer.result
     ast.fix_missing_locations(new_tree)
     _, lineno = inspect.getsourcelines(fn)
@@ -548,10 +580,11 @@ def transform(fn, interact):
 
     # We add a few extra variables in the existing namespace
     glb = fn.__globals__
-    glb["__ptera_interact"] = interact
-    glb["__ptera_ABSENT"] = ABSENT
-    glb["__ptera_get_tags"] = get_tags
+    glb[f"{prefix}_interact"] = interact
     glb["__ptera_globals"] = Resolver(glb, __builtins__)
+    glb["__ptera_ABSENT"] = ABSENT
+    glb["__ptera_Key"] = Key
+    glb["__ptera_get_tags"] = get_tags
 
     fname = fn.__name__
     save = glb.get(fname, None)

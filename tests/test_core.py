@@ -530,51 +530,6 @@ def test_overlay():
 
 
 @tooled
-def brooms(xs):
-    rval = 0
-    for i, x in enumerate(xs):
-        rval = rval + (i + 1) * x
-    return rval
-
-
-def test_for_loop():
-    assert brooms([1, 2, 3]) == 14
-    assert brooms.tweaking({"i": 0})([1, 2, 3]) == 6
-
-
-@tooled
-def excite():
-    try:
-        1 / 0
-    except ZeroDivisionError as exc:
-        return exc
-    except TypeError:
-        return None
-
-
-def test_exception():
-    assert isinstance(excite(), ZeroDivisionError)
-    assert excite.tweaking({"exc": "nope"})() == "nope"
-
-
-@tooled
-def oxygen():
-    j = 0
-    for i in range(10):
-        j = j + 1
-        yield j
-    return j
-
-
-def test_generator():
-    results = list(oxygen())
-    assert results == list(range(1, 11))
-
-    results = list(oxygen.tweaking({"j": 0})())
-    assert results == [0] * 10
-
-
-@tooled
 def multitag():
     y: tag.Bouffe = 10
     y = y * y
@@ -641,38 +596,6 @@ def test_redirect_global():
         assert exposure(8) == 512
 
     assert old_exposure is exposure
-
-
-def test_import_inside():
-    from ptera import tools as T_orig
-
-    @tooled
-    def imp(x):
-        import ptera.tools  # noqa
-        import ptera.tools as T
-
-        return T.gt(3)(x)
-
-    res, gts = imp.using("imp > T")(8)
-    assert res
-    assert gts.map("T") == [T_orig]
-
-
-def test_import_from_inside():
-    from ptera.tools import gt as gt_orig, lt as lt_orig
-
-    @tooled
-    def imp(x):
-        from ptera.tools import gt
-
-        return gt(3)(x)
-
-    res, gts = imp.using("imp > gt")(8)
-    assert res
-    assert gts.map("gt") == [gt_orig]
-
-    res = imp.tweaking({"imp > gt": lt_orig})(8)
-    assert not res
 
 
 def broccoli(n):
