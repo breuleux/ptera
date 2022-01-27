@@ -59,15 +59,3 @@ class throttle:
             return True
         else:
             return False
-
-    # def __call__(self, value):
-    #     if self.trigger is None:
-    #         self.trigger = value
-
-    #     if value == self.trigger:
-    #         return True
-    #     elif value > self.trigger:
-    #         self.trigger += self.period
-    #         return self(value)
-    #     else:
-    #         return False

@@ -4,8 +4,7 @@ import time
 from collections import defaultdict, deque
 from contextvars import ContextVar
 
-from .selector import Element, select
-from .tags import match_tag
+from .selector import Element, check_element, select
 from .transform import PteraNameError
 from .utils import ABSENT, autocreate
 
@@ -271,15 +270,6 @@ class Immediate(BaseAccumulator):
         cap = self.getcap(element)
         cap.set(varname, value)
         return self
-
-
-def check_element(el, name, category):
-    if el.name is not None and el.name != name:
-        return False
-    elif not match_tag(el.category, category):
-        return False
-    else:
-        return True
 
 
 def fits_pattern(pfn, pattern):

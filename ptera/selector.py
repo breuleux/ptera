@@ -8,8 +8,21 @@ from collections import defaultdict
 from itertools import count
 
 from . import opparse
-from .tags import Tag, tag as tag_factory
+from .tags import Tag, match_tag, tag as tag_factory
 from .utils import ABSENT
+
+
+class SelectorError(Exception):
+    pass
+
+
+def check_element(el, name, category):
+    if el.name is not None and el.name != name:
+        return False
+    elif not match_tag(el.category, category):
+        return False
+    else:
+        return True
 
 
 class cached_property:
@@ -262,6 +275,49 @@ class Call(ElementBase):
         caps = "" if not caps else "(" + ", ".join(caps) + ")"
         return f"{name}{caps}"
 
+    def problems(self):
+        problems = []
+
+        func = self.element.name
+        info = getattr(func, "info", None)
+
+        if func is None:
+            problems.append(f"Wildcard function is not allowed")
+
+        elif info is None:
+            problems.append(f"{func} is not properly tooled")
+
+        else:
+            for x in self.captures:
+                if x.name is None:
+                    for _, data in info.items():
+                        if check_element(x, x.name, data["annotation"]):
+                            break
+                    else:
+                        problems.append(
+                            f"No variable in `{func}` has the category `{x.category}`"
+                        )
+
+                elif x.name.startswith("#"):
+                    continue
+
+                else:
+                    data = info.get(x.name, None)
+                    if not data:
+                        problems.append(
+                            f"Cannot find a variable named `{x.name}` in `{func}`"
+                        )
+
+                    elif not check_element(x, x.name, data["annotation"]):
+                        problems.append(
+                            f"Variable `{func} > {x.name}` does not have the category `{x.category}`"
+                        )
+
+        for x in self.children:
+            problems.extend(x.problems())
+
+        return problems
+
 
 parser = opparse.Parser(
     lexer=opparse.Lexer(
@@ -489,7 +545,7 @@ def dict_resolver(env):
         elif hasattr(builtins, start):
             return getattr(builtins, start)
         else:
-            raise Exception(f"Could not resolve '{start}'.")
+            raise SelectorError(f"Could not resolve '{start}'.")
 
         for part in parts:
             curr = getattr(curr, part)
@@ -672,7 +728,9 @@ def _select(pattern, context="root"):
     return pattern
 
 
-def select(s, env=None, env_wrapper=None, skip_modules=[], skip_frames=0):
+def select(
+    s, env=None, env_wrapper=None, skip_modules=[], skip_frames=0, strict=False
+):
     """Create a selector from a string.
 
     Arguments:
@@ -685,6 +743,8 @@ def select(s, env=None, env_wrapper=None, skip_modules=[], skip_frames=0):
             is outside these modules.
         skip_frames: Number of frames to skip when looking for an
             environment.
+        strict: Whether to require functions and variables in the selector
+            to be statically resolvable (will give better errors).
     """
     if not isinstance(s, str):
         return s
@@ -694,4 +754,11 @@ def select(s, env=None, env_wrapper=None, skip_modules=[], skip_frames=0):
         if env_wrapper is not None:
             env = env_wrapper(env)
     pattern = _select(s)
-    return _resolve(pattern, env, count())
+    rval = _resolve(pattern, env, count())
+
+    if strict:
+        problems = rval.problems()
+        if problems:
+            raise SelectorError(repr(s) + ": " + "\n".join(problems))
+
+    return rval

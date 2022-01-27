@@ -93,7 +93,7 @@ class Probe(SourceProxy):
 
         if selectors:
             self._selectors = [
-                select(selector, env_wrapper=make_resolver)
+                select(selector, env_wrapper=make_resolver, strict=True)
                 for selector in selectors
             ]
             rules = [
