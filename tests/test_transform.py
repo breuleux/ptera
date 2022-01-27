@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from ptera.selector import SelectorError, select
 from ptera.transform import Key, name_error, transform
 from ptera.utils import ABSENT, keyword_decorator
 
@@ -107,7 +108,7 @@ def iceberg(
     return sum([x, y, z])
 
 
-_iceberg_line = 97
+_iceberg_line = 98
 
 
 @wrap
@@ -234,6 +235,31 @@ def test_docstring_preserved():
         return diet
 
     assert docteur.__doc__ == """Docstrings should be preserved."""
+
+
+def _has_problem(selector, problem):
+    with pytest.raises(SelectorError) as exc:
+        select(selector, strict=True)
+    exc_string = str(exc.value)
+    assert problem in exc_string
+    return True
+
+
+@one_test_per_assert
+def test_resolvability():
+    assert _has_problem("a", "Wildcard")
+    assert _has_problem("apple > banana", "Could not resolve 'apple'")
+    assert _has_problem("chocolat > no", "Cannot find a variable named `no`")
+    assert _has_problem(
+        "iceberg > chocolat > no", "Cannot find a variable named `no`"
+    )
+    assert _has_problem("chocolat > x:@xyz", "does not have the category")
+    assert _has_problem("chocolat > *:@xyz", "has the category")
+    assert _has_problem("_has_problem > selector", "is not properly tooled")
+
+    assert select("chocolat > x", strict=True)
+    assert select("chocolat > *", strict=True)
+    assert select("iceberg > chocolat > x", strict=True)
 
 
 #################################
