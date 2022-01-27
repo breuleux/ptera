@@ -79,8 +79,6 @@ def test_patterns():
 
     # Indirect
     assert _dbrie("a") == [{"a": [4]}, {"a": [100]}, {"a": [13]}]
-    assert _dbrie("double_brie >> a") == [{"a": [13]}, {"a": [4]}, {"a": [100]}]
-    assert _dbrie("double_brie >> x") == [{"x": [2]}, {"x": [10]}]
 
     # Multi-level
     assert _dbrie("double_brie(a) > brie(x)") == [{"a": [13], "x": [2, 10]}]
@@ -107,7 +105,7 @@ def test_patterns():
         {"v": [100]},
         {"v": [121]},
     ]
-    assert _dbrie("*(a) >> brie(!$v:tag.Bouffe)") == [
+    assert _dbrie("*(a) > brie(!$v:tag.Bouffe)") == [
         {"a": [13], "v": [4]},
         {"a": [13], "v": [9]},
         {"a": [13], "v": [100]},
@@ -263,7 +261,7 @@ def test_tap_map():
 
 
 def test_tap_map_all():
-    rval, acoll = double_brie.full_tapping("double_brie(!x1) >> brie(x)")(2, 10)
+    rval, acoll = double_brie.full_tapping("double_brie(!x1) > brie(x)")(2, 10)
     with pytest.raises(ValueError):
         acoll.map("x1", "x")
     assert acoll.map_all("x1", "x") == [([2], [2, 10])]

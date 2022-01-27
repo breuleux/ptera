@@ -258,9 +258,7 @@ class Call(ElementBase):
         for cap in self.captures:
             caps.append(cap.encode())
         for child in self.children:
-            enc = child.encode()
-            enc = f"> {enc}" if child.immediate else f">> {enc}"
-            caps.append(enc)
+            caps.append(child.encode())
         caps = "" if not caps else "(" + ", ".join(caps) + ")"
         return f"{name}{caps}"
 
@@ -301,8 +299,7 @@ def _guarantee_call(parent, context, resolve=True):
     if isinstance(parent, Element):
         name = VSymbol(parent.name) if parent.name and resolve else parent.name
         parent = parent.clone(capture=None, name=name).without_focus()
-        immediate = context == "incall"
-        parent = Call(element=parent, captures=(), immediate=immediate)
+        parent = Call(element=parent, captures=(), immediate=False)
     assert isinstance(parent, Call)
     return parent
 
@@ -352,49 +349,25 @@ def make_nested_imm(node, parent, child, context):
         return parent.clone(captures=parent.captures + (child,))
     else:
         return parent.clone(
-            children=parent.children + (child.clone(immediate=True),),
+            children=parent.children + (child.clone(immediate=False),),
         )
 
 
-@evaluate.register_action("X >> X")
-def make_nested(node, parent, child, context):
-    parent = evaluate(parent, context=context)
-    child = evaluate(child, context=context)
-    parent = _guarantee_call(parent, context=context)
-    if isinstance(child, Element):
-        child = child.with_focus()
-        child = Call(
-            element=Element(name=None),
-            captures=(child,),
-            immediate=False,
-            collapse=True,
-        )
-    return parent.clone(children=parent.children + (child,))
-
-
-@evaluate.register_action("_ > X")
-def make_nested_imm_pfx(node, _, child, context):
-    child = evaluate(child, context=context)
-    if isinstance(child, Element):
-        return Call(
-            element=Element(name=None), captures=(child,), immediate=True
-        )
-    else:
-        return child.clone(immediate=True)
-
-
-@evaluate.register_action("_ >> X")
-def make_nested_pfx(node, _, child, context):
-    child = evaluate(child, context=context)
-    if isinstance(child, Element):
-        return Call(
-            element=Element(name=None),
-            captures=(child,),
-            immediate=False,
-            collapse=True,
-        )
-    else:
-        return child.clone(immediate=False)
+# LEGACY
+# @evaluate.register_action("X >> X")
+# def make_nested(node, parent, child, context):
+#     parent = evaluate(parent, context=context)
+#     child = evaluate(child, context=context)
+#     parent = _guarantee_call(parent, context=context)
+#     if isinstance(child, Element):
+#         child = child.with_focus()
+#         child = Call(
+#             element=Element(name=None),
+#             captures=(child,),
+#             immediate=False,
+#             collapse=True,
+#         )
+#     return parent.clone(children=parent.children + (child,))
 
 
 @evaluate.register_action("_ : X")
