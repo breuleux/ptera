@@ -492,13 +492,9 @@ def make_as(node, element, name, context):
         return element.clone(captures=element.captures + (new_capture,))
 
 
-@evaluate.register_action("_ = X")
 @evaluate.register_action("X = X")
 def make_equals(node, element, value, context, matchfn=False):
-    if element is None:
-        element = Element(name=None)
-    else:
-        element = evaluate(element, context=context)
+    element = evaluate(element, context=context)
     value = value_evaluate(value)
     if matchfn:
         value = VCall(MatchFunction, (value,))
@@ -509,7 +505,6 @@ def make_equals(node, element, value, context, matchfn=False):
         return element.clone(captures=element.captures + (new_element,))
 
 
-@evaluate.register_action("_ ~ X")
 @evaluate.register_action("X ~ X")
 def make_matchfn(node, element, value, context):
     return make_equals(node, element, value, context, matchfn=True)
