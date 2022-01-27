@@ -1,4 +1,5 @@
 import sys
+from types import SimpleNamespace as NS
 
 import pytest
 
@@ -596,6 +597,16 @@ def test_redirect_global():
         assert exposure(8) == 512
 
     assert old_exposure is exposure
+
+
+def test_attr_assignment_ignored():
+    @tooled
+    def donkey(x):
+        x.y = 3
+        return x.y
+
+    assert donkey(NS(y=7)) == 3
+    assert donkey.tweaking({"x": NS(y=6)})(NS(y=7)) == 3
 
 
 def broccoli(n):

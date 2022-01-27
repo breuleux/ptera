@@ -383,6 +383,9 @@ class BaseOverlay:
 
 
 def interact(sym, key, category, value):
+    if key is not None:
+        return value
+
     fr = Frame.top.get()
 
     with fr.work_on(sym, key, category) as wfr:
