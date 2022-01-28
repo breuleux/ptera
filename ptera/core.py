@@ -394,29 +394,6 @@ def interact(sym, key, category, value):
     return value
 
 
-class PluginWrapper:
-    def __init__(self, plugin, fn):
-        self.hasoutput = plugin.hasoutput
-        self.plugin = plugin
-        self.fn = fn
-
-    def instantiate(self):
-        return ActivePluginWrapper(self.plugin.instantiate(), self.fn)
-
-
-class ActivePluginWrapper:
-    def __init__(self, active_plugin, fn):
-        self.active_plugin = active_plugin
-        self.fn = fn
-
-    def rules(self):
-        return self.active_plugin.rules()
-
-    def finalize(self):
-        rval = self.active_plugin.finalize()
-        return self.fn(rval)
-
-
 class Collector:
     def __init__(self, pattern, mapper=None, immediate=False):
         self.data = []
@@ -610,14 +587,6 @@ class Overlay:
         ol = Overlay(self.plugins)
         return ol.rewrite(values, full=full)
 
-    def collect(self, query):
-        plugin = _to_plugin(query)
-
-        def deco(fn):
-            self.plugins[fn.__name__] = PluginWrapper(plugin, fn)
-
-        return deco
-
     def on(self, query, full=False, all=False, immediate=True):
         plugin = _to_plugin(query, immediate=immediate)
 
@@ -658,7 +627,6 @@ class PteraFunction:
         overlay=None,
         return_object=False,
         origin=None,
-        attachments=None,
         partial_args=(),
     ):
         self.fn = fn
@@ -669,7 +637,6 @@ class PteraFunction:
         self.return_object = return_object
         self.origin = origin or self
         self.partial_args = partial_args
-        self.attachments = attachments or {}
 
     def clone(self, **kwargs):
         kwargs = {
@@ -679,32 +646,9 @@ class PteraFunction:
             "return_object": self.return_object,
             "origin": self.origin,
             "partial_args": self.partial_args,
-            "attachments": self.attachments,
             **kwargs,
         }
         return type(self)(**kwargs)
-
-    def use(self, *plugins, **kwplugins):
-        self.overlay.use(*plugins, **kwplugins)
-        return self
-
-    def full_tap(self, *plugins, **kwplugins):
-        self.overlay.full_tap(*plugins, **kwplugins)
-        return self
-
-    def tweak(self, values):
-        self.overlay.tweak(values)
-        return self
-
-    def rewrite(self, values, full=False):
-        self.overlay.rewrite(values, full=full)
-        return self
-
-    def tweaking(self, values):
-        return self.clone(overlay=self.overlay.tweaking(values))
-
-    def rewriting(self, values, full=False):
-        return self.clone(overlay=self.overlay.rewriting(values, full=full))
 
     def using(self, *plugins, **kwplugins):
         ol = self.overlay.using(*plugins, **kwplugins)
@@ -713,9 +657,6 @@ class PteraFunction:
     def full_tapping(self, *plugins, **kwplugins):
         ol = self.overlay.full_tapping(*plugins, **kwplugins)
         return self.clone(overlay=ol, return_object=ol.hasoutput)
-
-    def collect(self, query):
-        return self.overlay.collect(query)
 
     def on(self, query, full=False, all=False):
         return self.overlay.on(query, full=full, all=all)

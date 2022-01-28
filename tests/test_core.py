@@ -1,10 +1,11 @@
 import sys
+from contextlib import contextmanager
 from types import SimpleNamespace as NS
 
 import pytest
 
-from ptera import BaseOverlay, Overlay, select, tag, tooled
-from ptera.core import Capture, Immediate, Tap, Total
+from ptera import BaseOverlay, Overlay, tag, tooled
+from ptera.core import Capture, Immediate, Total
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
 
@@ -41,24 +42,43 @@ def test_normal_call():
     assert double_brie(3, 4) == 68
 
 
-class GrabAll:
-    def __init__(self, pattern):
-        self.results = []
-        pattern = select(pattern)
+class TapResults(list):
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return [x[item] for x in self if item in x]
+        else:
+            return super().__getitem__(item)
 
-        def listener(args):
-            self.results.append(
-                {name: cap.values for name, cap in args.items()}
-            )
 
-        self.rule = Total(pattern, listener)
+@contextmanager
+def tapping(pattern, all=False, full=False):
+    results = TapResults()
+
+    def listener(args):
+        results.append(
+            {
+                name: cap.values if all else cap.value
+                for name, cap in args.items()
+            }
+        )
+
+    cls = Total if full else Immediate
+    with BaseOverlay(cls(pattern, listener)):
+        yield results
+
+
+def full_tapping(pattern, all=True):
+    return tapping(pattern, all=all, full=True)
+
+
+def all_tapping(pattern, full=False):
+    return tapping(pattern, all=True, full=full)
 
 
 def _test(f, args, pattern):
-    store = GrabAll(pattern)
-    with BaseOverlay(store.rule):
+    with full_tapping(pattern) as results:
         f(*args)
-    return store.results
+    return results
 
 
 def _dbrie(pattern):
@@ -165,54 +185,51 @@ def superbrie(n):
 def test_nested_loops():
     assert superbrie(10) == 328750
 
-    _, x = superbrie.using("superbrie(i=1, j) > brie > x")(10)
-    assert x.map("j") == list(range(10))
-    assert x.map("x") == list(range(10, 20))
+    with tapping("superbrie(i=1, j) > brie > x") as res:
+        superbrie(10)
 
-    _, x = superbrie.using("superbrie(i=1, j ~ every(3)) > brie > x")(10)
-    assert x.map("x") == list(range(10, 20, 3))
+    assert res["j"] == list(range(10))
+    assert res["x"] == list(range(10, 20))
+
+    with tapping("superbrie(i=1, j ~ every(3)) > brie > x") as res:
+        superbrie(10)
+
+    assert res["x"] == list(range(10, 20, 3))
 
 
 def test_immediate_evaluation():
-    # This uses a GetterAccumulator
-    ss = superbrie.rewriting({"superbrie(k=7) > brie > x": (lambda args: 0)})
-    assert ss(10) == 328701
+    # This uses an ImmediateAccumulator
+    with Overlay.rewriting({"superbrie(k=7) > brie > x": (lambda args: 0)}):
+        assert superbrie(10) == 328701
 
-    # This uses a GetterAccumulator
-    ss = superbrie.rewriting({"superbrie(i=9) > brie > x": (lambda args: 0)})
-    assert ss(10) == 239365
+    # This uses an ImmediateAccumulator
+    with Overlay.rewriting({"superbrie(i=9) > brie > x": (lambda args: 0)}):
+        assert superbrie(10) == 239365
 
     # By default this uses a TotalAccumulator, which requires every
     # value of i to be 1 and every j to be a multiple of 3
-    _, x = superbrie.full_tapping("superbrie(i=1, j~every(3)) > brie > x")(10)
-    assert x.map("x") == []
+    with full_tapping("superbrie(i=1, j~every(3)) > brie > x") as xs:
+        superbrie(10)
+    assert xs == []
 
-    # Creates a SetterAccumulator which only takes into account the values
+    # Creates an ImmediateAccumulator which only takes into account the values
     # of i and j at the moment the focus variable x is triggered
-    _, x = superbrie.using(
-        Tap("superbrie(i=1, j~every(3)) > brie > x", immediate=True)
-    )(10)
-    assert x.map("x") == list(range(10, 20, 3))
+    with tapping("superbrie(i=1, j~every(3)) > brie > x") as xs:
+        superbrie(10)
+
+    assert xs["x"] == list(range(10, 20, 3))
 
 
 def test_nested_overlay():
     expectedx = [{"x": [2]}, {"x": [10]}]
     expectedy = [{"y": [3]}, {"y": [11]}]
 
-    storex = GrabAll("brie > x")
-    storey = GrabAll("brie > y")
-    with BaseOverlay(storex.rule, storey.rule):
-        assert double_brie(2, 10) == 236
-    assert storex.results == expectedx
-    assert storey.results == expectedy
-
-    storex = GrabAll("brie > x")
-    storey = GrabAll("brie > y")
-    with BaseOverlay(storex.rule):
-        with BaseOverlay(storey.rule):
+    with full_tapping("brie > x") as resultsx:
+        with full_tapping("brie > y") as resultsy:
             assert double_brie(2, 10) == 236
-    assert storex.results == expectedx
-    assert storey.results == expectedy
+
+    assert resultsx == expectedx
+    assert resultsy == expectedy
 
 
 @tooled
@@ -243,7 +260,8 @@ def test_missing_var():
         assert info["annotation"] == tag.MyStErY
 
     with pytest.raises(NameError):
-        mystery.tweaking({"mystery(hat=10) > surprise": 0})(3)
+        with Overlay.tweaking({"mystery(hat=10) > surprise": 0}):
+            mystery(3)
 
 
 def test_tap_map():
@@ -304,46 +322,6 @@ def test_on():
     assert results.minx_full == [-2, -10]
 
 
-def test_use():
-    dbrie = double_brie.clone(return_object=True)
-    dbrie.use(data="brie(!a, b)")
-    rval = dbrie(2, 10)
-    assert rval.value == 236
-    assert rval.data.map() == [{"a": 4}, {"a": 100}]
-
-
-def test_full_tap():
-    dbrie = double_brie.clone(return_object=True)
-    dbrie.full_tap(data="brie(!a, b)")
-    rval = dbrie(2, 10)
-    assert rval.value == 236
-    assert rval.data.map("a") == [4, 100]
-    assert rval.data.map("b") == [9, 121]
-
-
-def test_tweak():
-    dbrie = double_brie.clone()
-    dbrie.tweak({"brie > x": 10})
-    assert dbrie(2, 10) == 332
-
-
-def test_rewrite():
-    dbrie = double_brie.clone()
-    dbrie.rewrite({"brie(x, !y)": lambda args: args["x"]})
-    assert dbrie(2, 10) == 210
-
-
-def test_collect():
-    dbrie = double_brie.clone(return_object=True)
-
-    @dbrie.collect("brie > x")
-    def sumx(xs):
-        return sum(xs.map("x"))
-
-    results = dbrie(2, 10)
-    assert results.sumx == 12
-
-
 @tooled
 def square(x):
     rval = x * x
@@ -358,38 +336,45 @@ def sumsquares(x, y):
     return rval
 
 
-def test_readme():
-    results = sumsquares.using(q="x")(3, 4)
-    assert results.q.map("x") == [3, 3, 4]
+def test_old_readme():
+    with tapping("x") as xs:
+        sumsquares(3, 4)
+    assert xs["x"] == [3, 3, 4]
 
-    results = sumsquares.using(q="square > x")(3, 4)
-    assert results.q.map("x") == [3, 4]
+    with tapping("square > x") as xs:
+        sumsquares(3, 4)
+    assert xs["x"] == [3, 4]
 
-    results = sumsquares.full_tapping(q="square(rval) > x")(3, 4)
-    assert results.q.map("x", "rval") == [(3, 9), (4, 16)]
+    with full_tapping("square(rval) > x", all=False) as xs:
+        sumsquares(3, 4)
+    assert xs["x"] == [3, 4]
+    assert xs["rval"] == [9, 16]
 
-    results = sumsquares.full_tapping(
-        q="sumsquares(x as ssx, y as ssy) > square(rval) > x"
-    )(3, 4)
-    assert results.q.map("ssx", "ssy", "x", "rval") == [
-        (3, 4, 3, 9),
-        (3, 4, 4, 16),
-    ]
+    with full_tapping(
+        "sumsquares(x as ssx, y as ssy) > square(rval) > x", all=False
+    ) as xs:
+        sumsquares(3, 4)
 
-    results = sumsquares.full_tapping(
-        q="sumsquares(!x as ssx, y as ssy) > square(rval, x)"
-    )(3, 4)
-    assert results.q.map_all("ssx", "ssy", "x", "rval") == [
-        ([3], [4], [3, 4], [9, 16])
-    ]
+    assert xs["ssx"] == [3, 3]
+    assert xs["ssy"] == [4, 4]
+    assert xs["x"] == [3, 4]
+    assert xs["rval"] == [9, 16]
 
-    result = sumsquares.tweaking({"square > rval": 0})(3, 4)
-    assert result == 0
+    with full_tapping(
+        "sumsquares(!x as ssx, y as ssy) > square(rval, x)"
+    ) as xs:
+        sumsquares(3, 4)
 
-    result = sumsquares.rewriting(
-        {"square(x) > rval": lambda args: args["x"] + 1}
-    )(3, 4)
-    assert result == 9
+    assert xs["ssx"] == [[3]]
+    assert xs["ssy"] == [[4]]
+    assert xs["x"] == [[3, 4]]
+    assert xs["rval"] == [[9, 16]]
+
+    with Overlay.tweaking({"square > rval": 0}):
+        assert sumsquares(3, 4) == 0
+
+    with Overlay.rewriting({"square(x) > rval": lambda args: args["x"] + 1}):
+        assert sumsquares(3, 4) == 9
 
 
 def test_capture():
@@ -457,19 +442,16 @@ def test_method():
     siamese = Matou("siamese")
     assert siamese.meow() == "meowwwwwww"
 
-    assert siamese.meow.tweaking({"Matou.meow > es": "eee"})() == "meeeowwwwwww"
-
     with Overlay.tweaking({"Matou.meow > es": "eee"}):
         assert siamese.meow() == "meeeowwwwwww"
 
     with Overlay.tweaking({"Matou.meow > repeat": 2}):
         assert siamese.meow() == "meoowwwwwww meoowwwwwww"
 
-    store = GrabAll("Matou.meow(repeat) > os")
-    with BaseOverlay(store.rule):
+    with full_tapping("Matou.meow(repeat) > os") as results:
         for i in range(3):
             siamese.meow(i)
-    assert store.results == [
+    assert results == [
         {"os": [""], "repeat": [0]},
         {"os": ["o"], "repeat": [1]},
         {"os": ["oo"], "repeat": [2]},
@@ -486,11 +468,10 @@ def test_redirect_method():
     with Overlay.tweaking({"Matou.meow_nodeco > es": "eee"}):
         assert siamese.meow_nodeco() == "meeeowwwwwww"
 
-    store = GrabAll("Matou.meow_nodeco(repeat) > os")
-    with BaseOverlay(store.rule):
+    with full_tapping("Matou.meow_nodeco(repeat) > os") as results:
         for i in range(3):
             siamese.meow_nodeco(i)
-    assert store.results == [
+    assert results == [
         {"os": [""], "repeat": [0]},
         {"os": ["o"], "repeat": [1]},
         {"os": ["oo"], "repeat": [2]},
@@ -598,7 +579,8 @@ def test_attr_assignment_ignored():
         return x.y
 
     assert donkey(NS(y=7)) == 3
-    assert donkey.tweaking({"x": NS(y=6)})(NS(y=7)) == 3
+    with Overlay.tweaking({"x": NS(y=6)}):
+        assert donkey(NS(y=7)) == 3
 
 
 def test_enter_hashvar():
@@ -608,12 +590,11 @@ def test_enter_hashvar():
 
     n = 5
 
-    store = GrabAll("wumpus > #enter")
-    with BaseOverlay(store.rule):
+    with full_tapping("wumpus > #enter") as results:
         for i in range(n):
             wumpus()
 
-    assert store.results == [{"#enter": [True]}] * n
+    assert results == [{"#enter": [True]}] * n
 
 
 class Koala:
@@ -646,21 +627,19 @@ def test_generator():
             x = x + 1
             yield x * 2
 
-    store = GrabAll("oxygen > x")
-    with BaseOverlay(store.rule):
+    with full_tapping("oxygen > x") as results:
         for x in oxygen():
             if x > 10:
                 break
 
-    assert store.results == [{"x": [i]} for i in range(7)]
+    assert results == [{"x": [i]} for i in range(7)]
 
-    store = GrabAll("oxygen > #yield")
-    with BaseOverlay(store.rule):
+    with full_tapping("oxygen > #yield") as results:
         for x in oxygen():
             if x > 10:
                 break
 
-    assert store.results == [{"#yield": [i * 2]} for i in range(1, 7)]
+    assert results == [{"#yield": [i * 2]} for i in range(1, 7)]
 
 
 def broccoli(n):
