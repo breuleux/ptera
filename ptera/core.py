@@ -685,9 +685,6 @@ class PteraFunction:
         }
         return type(self)(**kwargs)
 
-    def attach(self, **values):
-        return self.clone(attachments={**self.attachments, **values})
-
     def use(self, *plugins, **kwplugins):
         self.overlay.use(*plugins, **kwplugins)
         return self
@@ -730,17 +727,10 @@ class PteraFunction:
         else:
             return self.clone(partial_args=self.partial_args + (obj,))
 
-    def _run_attachments(self):
-        interact("#time", None, None, time.time())
-        interact("#enter", None, None, True)
-        if self.attachments:
-            for k, v in self.attachments.items():
-                interact(f"#{k}", None, None, v)
-
     def __gcall__(self, *args, **kwargs):
         with self.overlay as _:
             with proceed(self):
-                self._run_attachments()
+                interact("#enter", None, None, True)
                 yield from self.fn(*self.partial_args, *args, **kwargs)
 
     def __call__(self, *args, **kwargs):
@@ -749,7 +739,7 @@ class PteraFunction:
 
         with self.overlay as callres:
             with proceed(self):
-                self._run_attachments()
+                interact("#enter", None, None, True)
                 rval = self.fn(*self.partial_args, *args, **kwargs)
                 callres["0"] = callres["value"] = rval
 

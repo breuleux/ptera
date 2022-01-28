@@ -151,12 +151,6 @@ def test_deep():
     ]
 
 
-def test_attach():
-    _brie = brie.attach(hello=12).using("brie > #hello")
-    res, hello = _brie(5, 6)
-    assert hello.map("#hello") == [12]
-
-
 @tooled
 def superbrie(n):
     result = 0
