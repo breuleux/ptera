@@ -1,6 +1,5 @@
 import functools
 import inspect
-import time
 from collections import defaultdict, deque
 from contextvars import ContextVar
 

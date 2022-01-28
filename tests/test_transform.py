@@ -256,9 +256,11 @@ def test_resolvability():
     assert _has_problem("chocolat > x:@xyz", "does not have the category")
     assert _has_problem("chocolat > *:@xyz", "has the category")
     assert _has_problem("_has_problem > selector", "is not properly tooled")
+    assert _has_problem("chocolat > #what", "#what is not a valid hashvar")
 
     assert select("chocolat > x", strict=True)
     assert select("chocolat > *", strict=True)
+    assert select("chocolat > #enter", strict=True)
     assert select("iceberg > chocolat > x", strict=True)
 
 

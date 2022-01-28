@@ -11,6 +11,8 @@ from . import opparse
 from .tags import Tag, match_tag, tag as tag_factory
 from .utils import ABSENT
 
+_valid_hashvars = ("#enter", "#value", "#yield")
+
 
 class SelectorError(Exception):
     pass
@@ -296,7 +298,10 @@ class Call(ElementBase):
                         )
 
                 elif x.name.startswith("#"):
-                    continue
+                    if x.name not in _valid_hashvars:
+                        problems.append(
+                            f"{x.name} is not a valid hashvar. Valid hashvars are: {', '.join(_valid_hashvars)}"
+                        )
 
                 else:
                     data = info.get(x.name, None)
