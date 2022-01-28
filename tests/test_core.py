@@ -638,6 +638,31 @@ def test_intercept_attribute():
     assert k.y == 7
 
 
+def test_generator():
+    @tooled
+    def oxygen():
+        x = 0
+        while True:
+            x = x + 1
+            yield x * 2
+
+    store = GrabAll("oxygen > x")
+    with BaseOverlay(store.rule):
+        for x in oxygen():
+            if x > 10:
+                break
+
+    assert store.results == [{"x": [i]} for i in range(7)]
+
+    store = GrabAll("oxygen > #yield")
+    with BaseOverlay(store.rule):
+        for x in oxygen():
+            if x > 10:
+                break
+
+    assert store.results == [{"#yield": [i * 2]} for i in range(1, 7)]
+
+
 def broccoli(n):
     factor = 2
     a = n * factor

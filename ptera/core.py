@@ -731,7 +731,9 @@ class PteraFunction:
         with self.overlay as _:
             with proceed(self):
                 interact("#enter", None, None, True)
-                yield from self.fn(*self.partial_args, *args, **kwargs)
+                for entry in self.fn(*self.partial_args, *args, **kwargs):
+                    interact("#yield", None, None, entry)
+                    yield entry
 
     def __call__(self, *args, **kwargs):
         if self.isgenerator:
