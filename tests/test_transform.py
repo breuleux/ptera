@@ -262,6 +262,13 @@ def test_resolvability():
     assert select("iceberg > chocolat > x", strict=True)
 
 
+@one_test_per_assert
+def test_Key():
+    assert str(Key("attr", "wow")) == "<Key attr='wow'>"
+    assert Key("attr", "wow").affix_to("thing") == "thing.wow"
+    assert Key("index", "wow").affix_to("thing") == "thing['wow']"
+
+
 #################################
 # Test language feature support #
 #################################

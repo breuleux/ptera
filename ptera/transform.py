@@ -22,7 +22,15 @@ class Key:
         self.type = type
         self.value = value
 
-    def __str__(self):  # pragma: no cover
+    def affix_to(self, sym):
+        if self.type == "attr":
+            return f"{sym}.{self.value}"
+        elif self.type == "index":
+            return f"{sym}[{self.value!r}]"
+        else:  # pragma: no cover
+            raise NotImplementedError(self.type)
+
+    def __str__(self):
         return f"<Key {self.type}={self.value!r}>"
 
     __repr__ = __str__

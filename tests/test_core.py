@@ -622,6 +622,28 @@ def test_enter_hashvar():
     assert store.results == [{"#enter": [True]}] * n
 
 
+class Koala:
+    @tooled
+    def moo(self, x):
+        self.x = x
+        self.y = x
+
+
+def test_intercept_attribute():
+    k = Koala()
+
+    with BaseOverlay(
+        Immediate(
+            "Koala.moo > self.x",
+            intercept=lambda args: args["self.x"].value + 1,
+        )
+    ):
+        k.moo(7)
+
+    assert k.x == 8
+    assert k.y == 7
+
+
 def broccoli(n):
     factor = 2
     a = n * factor

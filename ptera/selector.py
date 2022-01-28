@@ -279,7 +279,7 @@ class Call(ElementBase):
         info = getattr(func, "info", None)
 
         if func is None:
-            problems.append(f"Wildcard function is not allowed")
+            problems.append("Wildcard function is not allowed")
 
         elif info is None:
             problems.append(f"{func} is not properly tooled")

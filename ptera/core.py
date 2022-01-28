@@ -292,7 +292,8 @@ def fits_pattern(pfn, pattern):
                 return False
             capmap[cap] = varnames
         else:
-            if not cap.name.startswith("#") and cap.name not in fvars:
+            name = cap.name.split(".")[0]
+            if not cap.name.startswith("#") and name not in fvars:
                 return False
             capmap[cap] = [cap.name]
 
@@ -375,7 +376,7 @@ class BaseOverlay:
 
 def interact(sym, key, category, value):
     if key is not None:
-        return value
+        sym = key.affix_to(sym)
 
     fr = Frame.top.get()
 
