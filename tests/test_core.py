@@ -607,6 +607,21 @@ def test_attr_assignment_ignored():
     assert donkey.tweaking({"x": NS(y=6)})(NS(y=7)) == 3
 
 
+def test_enter_hashvar():
+    @tooled
+    def wumpus():
+        return 3
+
+    n = 5
+
+    store = GrabAll("wumpus > #enter")
+    with BaseOverlay(store.rule):
+        for i in range(n):
+            wumpus()
+
+    assert store.results == [{"#enter": [True]}] * n
+
+
 def broccoli(n):
     factor = 2
     a = n * factor

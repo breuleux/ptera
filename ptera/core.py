@@ -159,12 +159,6 @@ class BaseAccumulator:
         self.children = []
         self.captures = {}
 
-        if self.parent is None:
-            self.names = set(pattern.all_captures)
-        else:
-            self.names = self.parent.names
-            self.parent.children.append(self)
-
     def __check(self, fn, check):
         def new_fn(results):
             if self.pattern.check_captures(results):
@@ -235,6 +229,11 @@ class Total(BaseAccumulator):
         super().__init__(
             pattern=pattern, trigger=trigger, close=close, **kwargs
         )
+        if self.parent is None:
+            self.names = self.pattern.all_captures
+        else:
+            self.names = self.parent.names
+            self.parent.children.append(self)
 
     def accumulator_for(self, element):
         return self.fork(pattern=element) if element.focus else self
@@ -732,6 +731,7 @@ class PteraFunction:
 
     def _run_attachments(self):
         interact("#time", None, None, time.time())
+        interact("#enter", None, None, True)
         if self.attachments:
             for k, v in self.attachments.items():
                 interact(f"#{k}", None, None, v)
