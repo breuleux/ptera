@@ -95,6 +95,10 @@ class Element(ElementBase):
         return self.value is not ABSENT
 
     @cached_property
+    def main(self):
+        return self if self.focus else None
+
+    @cached_property
     def all_captures(self):
         if self.capture and not self.capture.startswith("/"):
             return {self.capture}
@@ -207,6 +211,13 @@ class Call(ElementBase):
             for tag in cap.tags:
                 results[tag].add(cap)
         return results
+
+    @cached_property
+    def main(self):
+        for x in self.captures + self.children:
+            if x.main is not None:
+                return x.main
+        return None
 
     @cached_property
     def all_captures(self):

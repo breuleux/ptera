@@ -1,15 +1,15 @@
 import sys
-from contextlib import contextmanager
+from collections import defaultdict
 from types import SimpleNamespace as NS
 
 import pytest
 
 from ptera import BaseOverlay, Overlay, tag, tooled
-from ptera.core import Capture, Immediate, Total
+from ptera.core import Capture, Immediate
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
 
-from .common import one_test_per_assert
+from .common import TapResults, full_tapping, one_test_per_assert, tapping
 
 
 @tooled
@@ -40,39 +40,6 @@ def double_brie(x1, y1):
 def test_normal_call():
     assert brie(3, 4) == 25
     assert double_brie(3, 4) == 68
-
-
-class TapResults(list):
-    def __getitem__(self, item):
-        if isinstance(item, str):
-            return [x[item] for x in self if item in x]
-        else:
-            return super().__getitem__(item)
-
-
-@contextmanager
-def tapping(pattern, all=False, full=False):
-    results = TapResults()
-
-    def listener(args):
-        results.append(
-            {
-                name: cap.values if all else cap.value
-                for name, cap in args.items()
-            }
-        )
-
-    cls = Total if full else Immediate
-    with BaseOverlay(cls(pattern, listener)):
-        yield results
-
-
-def full_tapping(pattern, all=True):
-    return tapping(pattern, all=all, full=True)
-
-
-def all_tapping(pattern, full=False):
-    return tapping(pattern, all=True, full=full)
 
 
 def _test(f, args, pattern):
@@ -264,64 +231,6 @@ def test_missing_var():
             mystery(3)
 
 
-def test_tap_map():
-    rval, acoll = double_brie.full_tapping("brie(!a, b)")(2, 10)
-    assert acoll.map("a") == [4, 100]
-    assert acoll.map("b") == [9, 121]
-    assert acoll.map(lambda args: args["a"] + args["b"]) == [13, 221]
-    assert acoll.map() == [{"a": 4, "b": 9}, {"a": 100, "b": 121}]
-
-
-def test_tap_map_all():
-    rval, acoll = double_brie.full_tapping("double_brie(!x1) > brie(x)")(2, 10)
-    with pytest.raises(ValueError):
-        acoll.map("x1", "x")
-    assert acoll.map_all("x1", "x") == [([2], [2, 10])]
-    assert acoll.map_all() == [{"x1": [2], "x": [2, 10]}]
-
-
-def test_tap_map_named():
-    rval = double_brie.using(data="brie(!a, b)")(2, 10)
-    assert rval.value == 236
-    assert rval.data.map("a") == [4, 100]
-
-
-def test_tap_map_full():
-    rval, acoll = double_brie.using("brie > $param:tag.Bouffe")(2, 10)
-    assert acoll.map_full(lambda args: args["param"].value) == [4, 9, 100, 121]
-    assert acoll.map_full(lambda args: args["param"].name) == [
-        "a",
-        "b",
-        "a",
-        "b",
-    ]
-
-
-def test_on():
-    dbrie = double_brie.clone(return_object=True)
-
-    @dbrie.on("brie > x")
-    def minx(args):
-        x = args["x"]
-        return -x
-
-    @dbrie.on("brie > x", all=True)
-    def minx_all(args):
-        x = args["x"]
-        return [-v for v in x]
-
-    @dbrie.on("brie > x", full=True)
-    def minx_full(args):
-        x = args["x"]
-        assert x.name == "x"
-        return -x.value
-
-    results = dbrie(2, 10)
-    assert results.minx == [-2, -10]
-    assert results.minx_all == [[-2], [-10]]
-    assert results.minx_full == [-2, -10]
-
-
 @tooled
 def square(x):
     rval = x * x
@@ -336,12 +245,14 @@ def sumsquares(x, y):
     return rval
 
 
-def test_old_readme():
-    with tapping("x") as xs:
-        sumsquares(3, 4)
-    assert xs["x"] == [3, 3, 4]
+def test_misc():
+    # A version of these was in the old README
 
-    with tapping("square > x") as xs:
+    with Overlay.tapping("x") as xs:
+        sumsquares(3, 4)
+    assert xs == [{"x": 3}, {"x": 3}, {"x": 4}]
+
+    with Overlay.tapping("square > x", TapResults()) as xs:
         sumsquares(3, 4)
     assert xs["x"] == [3, 4]
 
@@ -478,9 +389,11 @@ def test_redirect_method():
     ]
 
 
-def test_overlay():
+def test_on():
     def twice_mystery(x):
         return mystery(x), mystery(x + 1)
+
+    results = defaultdict(list)
 
     ov = Overlay()
     ov.tweak({"surprise": 2})
@@ -488,19 +401,50 @@ def test_overlay():
     @ov.on("mystery > hat")
     def hats(args):
         hat = args["hat"]
-        return hat * hat
+        results["hats"].append(hat * hat)
 
     @ov.on("mystery(hat) > surprise")
     def shats(args):
         surprise = args["surprise"]
         hat = args["hat"]
-        return (surprise, hat)
+        results["shats"].append((surprise, hat))
 
-    with ov as results:
+    with ov:
         assert twice_mystery(10) == (20, 22)
 
-    assert results.hats == [100, 121]
-    assert results.shats == [(2, 10), (2, 11)]
+    assert results == {
+        "hats": [100, 121],
+        "shats": [(2, 10), (2, 11)],
+    }
+
+
+def test_on_2():
+    results = defaultdict(list)
+
+    ov = Overlay()
+
+    @ov.on("brie > x")
+    def minx(args):
+        x = args["x"]
+        results["minx"].append(-x)
+
+    @ov.on("brie > x", all=True)
+    def minx_all(args):
+        x = args["x"]
+        results["minx_all"].append([-v for v in x])
+
+    @ov.on("brie > x", full=True)
+    def minx_full(args):
+        x = args["x"]
+        assert x.name == "x"
+        results["minx_full"].append(-x.value)
+
+    with ov:
+        double_brie(2, 10)
+
+    assert results["minx"] == [-2, -10]
+    assert results["minx_all"] == [[-2], [-10]]
+    assert results["minx_full"] == [-2, -10]
 
 
 @tooled

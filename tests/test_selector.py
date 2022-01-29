@@ -246,6 +246,14 @@ def test_specialize():
     ) == sel.parse("co > co > (coconut as nut):Fruit")
 
 
+@one_test_per_assert
+def test_main():
+    assert sel.select("apple > pie").main.name == "pie"
+    assert sel.select("apple(!x, y)").main.name == "x"
+    assert sel.select("apple(x, !y)").main.name == "y"
+    assert sel.select("apple(x, y)").main is None
+
+
 def test_find_tag():
     expr = sel.parse("f(!!x) > g > y")
     t1 = expr.all_tags[1]

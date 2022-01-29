@@ -1,6 +1,7 @@
 import functools
 import inspect
 from collections import defaultdict, deque
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from .selector import Element, check_element, select
@@ -357,10 +358,7 @@ class BaseOverlay:
         self.handlers = [(h.pattern, h) for h in handlers]
 
     def __enter__(self):
-        if not self.handlers:
-            return None
-
-        else:
+        if self.handlers:
             collection = PatternCollection(self.handlers)
             curr = PatternCollection.current.get()
             if curr is not None:
@@ -394,163 +392,43 @@ def interact(sym, key, category, value):
     return value
 
 
-class Collector:
-    def __init__(self, pattern, mapper=None, immediate=False):
-        self.data = []
-        self.pattern = pattern
-        self.mapper = mapper
-        self.ruleclass = Immediate if immediate else Total
-
-        if self.mapper:
-
-            def listener(kwargs):
-                result = self.mapper(kwargs)
-                if result is not None:
-                    self.data.append(result)
-
-        else:
-
-            def listener(kwargs):
-                self.data.append(kwargs)
-
-        self._listener = listener
-
-    def __iter__(self):
-        return iter(self.data)
-
-    def _map_helper(self, args, transform_all, transform_one):
-        if not args:
-            return transform_all(self)
-        elif isinstance(args[0], str):
-            assert all(isinstance(arg, str) for arg in args)
-            results = tuple(
-                [transform_one(entry[arg]) for entry in self] for arg in args
-            )
-            if len(args) == 1:
-                return results[0]
-            else:
-                return list(zip(*results))
-        else:
-            assert len(args) == 1
-            (fn,) = args
-            return [fn(entry) for entry in transform_all(self)]
-
-    def map(self, *args):
-        return self._map_helper(
-            args=args,
-            transform_all=lambda self: [
-                {key: cap.value for key, cap in entry.items()} for entry in self
-            ],
-            transform_one=lambda entry: entry.value,
-        )
-
-    def map_all(self, *args):
-        return self._map_helper(
-            args=args,
-            transform_all=lambda self: [
-                {key: cap.values for key, cap in entry.items()}
-                for entry in self
-            ],
-            transform_one=lambda entry: entry.values,
-        )
-
-    def map_full(self, *args):
-        return self._map_helper(
-            args=args,
-            transform_all=lambda self: self,
-            transform_one=lambda entry: entry,
-        )
-
-    def rules(self):
-        return [self.ruleclass(self.pattern, self._listener)]
-
-    def finalize(self):
-        if self.mapper:
-            return self.data
-        else:
-            return self
-
-
-class Tap:
-    hasoutput = True
-
-    def __init__(self, selector, mapper=None, immediate=False):
-        self.selector = select(selector)
-        self.mapper = mapper
-        self.immediate = immediate
-
-    def hook(self, mapper):
-        self.mapper = mapper
-        return self
-
-    def instantiate(self):
-        return Collector(
-            self.selector, mapper=self.mapper, immediate=self.immediate
-        )
-
-
-class CallResults:
-    def __getitem__(self, item):
-        if isinstance(item, int):
-            item = str(item)
-        try:
-            return getattr(self, item)
-        except AttributeError:
-            raise IndexError(item)
-
-    def __setitem__(self, item, value):
-        setattr(self, str(item), value)
-
-
-class StateOverlay:
-    hasoutput = False
-
-    def __init__(self, values):
-        self._rules = [
-            Immediate(patt, intercept=value) for patt, value in values.items()
-        ]
-
-    def rules(self):
-        return self._rules
-
-    def instantiate(self):
-        return self
-
-    def finalize(self):
-        return self
-
-
-def _to_plugin(spec, **kwargs):
-    return Tap(spec, **kwargs) if isinstance(spec, str) else spec
-
-
 class Overlay:
-    def __init__(self, plugins={}):
-        self.plugins = dict(plugins)
+    def __init__(self, rules=()):
+        self.rules = list(rules)
 
-    @property
-    def hasoutput(self):
-        return any(p.hasoutput for name, p in self.plugins.items())
+    def fork(self):
+        return type(self)(rules=self.rules)
 
-    def __use(self, plugins, kwplugins, immediate):
-        plugins = {str(i + 1): p for i, p in enumerate(plugins)}
-        plugins.update(kwplugins)
-        plugins = {
-            name: _to_plugin(p, immediate=immediate)
-            for name, p in plugins.items()
-        }
-        self.plugins.update(plugins)
-        return self
+    def register(self, query, fn, full=False, all=False, immediate=True):
+        def mapper(args):
+            if all:
+                args = {key: cap.values for key, cap in args.items()}
+            elif not full:
+                args = {key: cap.value for key, cap in args.items()}
+            return fn(args)
 
-    def use(self, *plugins, **kwplugins):
-        return self.__use(plugins, kwplugins, True)
+        ruleclass = Immediate if immediate else Total
+        self.rules.append(ruleclass(query, mapper))
 
-    def full_tap(self, *plugins, **kwplugins):
-        return self.__use(plugins, kwplugins, False)
+    def on(self, query, **kwargs):
+        def deco(fn):
+            self.register(query, fn, **kwargs)
+            return fn
+
+        return deco
+
+    def tap(self, query, dest=None, **kwargs):
+        dest = [] if dest is None else dest
+        self.register(query, dest.append, **kwargs)
+        return dest
 
     def tweak(self, values):
-        values = {select(k): (lambda _, _v=v: _v) for k, v in values.items()}
-        self.plugins[f"#{len(self.plugins)}"] = StateOverlay(values)
+        self.rules.extend(
+            [
+                Immediate(patt, intercept=(lambda _, _v=v: _v))
+                for patt, v in values.items()
+            ]
+        )
         return self
 
     def rewrite(self, values, full=False):
@@ -563,132 +441,76 @@ class Overlay:
 
             return newfn
 
-        values = {k: _wrapfn(v, full=full) for k, v in values.items()}
-        self.plugins[f"#{len(self.plugins)}"] = StateOverlay(values)
+        self.rules.extend(
+            [
+                Immediate(patt, intercept=_wrapfn(v, full=full))
+                for patt, v in values.items()
+            ]
+        )
         return self
 
     @autocreate
-    def using(self, *plugins, **kwplugins):
-        ol = Overlay(self.plugins)
-        return ol.use(*plugins, **kwplugins)
-
-    @autocreate
-    def full_tapping(self, *plugins, **kwplugins):
-        ol = Overlay(self.plugins)
-        return ol.full_tap(*plugins, **kwplugins)
-
-    @autocreate
     def tweaking(self, values):
-        ol = Overlay(self.plugins)
+        ol = self.fork()
         return ol.tweak(values)
 
     @autocreate
     def rewriting(self, values, full=False):
-        ol = Overlay(self.plugins)
+        ol = self.fork()
         return ol.rewrite(values, full=full)
 
-    def on(self, query, full=False, all=False, immediate=True):
-        plugin = _to_plugin(query, immediate=immediate)
-
-        def deco(fn):
-            def mapper(args):
-                if all:
-                    args = {key: cap.values for key, cap in args.items()}
-                elif not full:
-                    args = {key: cap.value for key, cap in args.items()}
-                return fn(args)
-
-            self.plugins[fn.__name__] = plugin.hook(mapper)
-
-        return deco
+    @autocreate
+    @contextmanager
+    def tapping(self, query, dest=None, **kwargs):
+        ol = self.fork()
+        dest = ol.tap(query, dest=dest, **kwargs)
+        with ol:
+            yield dest
 
     def __enter__(self):
-        rulesets = []
-        plugins = {name: p.instantiate() for name, p in self.plugins.items()}
-        for plugin in plugins.values():
-            rulesets.extend(plugin.rules())
+        rulesets = [*self.rules]
         self._ol = BaseOverlay(*rulesets)
         self._ol.__enter__()
-        self._results = CallResults()
-        self._inst_plugins = plugins
-        return self._results
+        return self
 
     def __exit__(self, typ, exc, tb):
         self._ol.__exit__(None, None, None)
-        for name, plugin in self._inst_plugins.items():
-            setattr(self._results, name, plugin.finalize())
 
 
 class PteraFunction:
-    def __init__(
-        self,
-        fn,
-        info,
-        overlay=None,
-        return_object=False,
-        origin=None,
-        partial_args=(),
-    ):
+    def __init__(self, fn, info, origin=None, partial_args=()):
         self.fn = fn
         self.__doc__ = fn.__doc__
         self.info = info
         self.isgenerator = inspect.isgeneratorfunction(self.fn)
-        self.overlay = overlay or Overlay()
-        self.return_object = return_object
         self.origin = origin or self
         self.partial_args = partial_args
-
-    def clone(self, **kwargs):
-        kwargs = {
-            "fn": self.fn,
-            "info": self.info,
-            "overlay": Overlay(self.overlay.plugins),
-            "return_object": self.return_object,
-            "origin": self.origin,
-            "partial_args": self.partial_args,
-            **kwargs,
-        }
-        return type(self)(**kwargs)
-
-    def using(self, *plugins, **kwplugins):
-        ol = self.overlay.using(*plugins, **kwplugins)
-        return self.clone(overlay=ol, return_object=ol.hasoutput)
-
-    def full_tapping(self, *plugins, **kwplugins):
-        ol = self.overlay.full_tapping(*plugins, **kwplugins)
-        return self.clone(overlay=ol, return_object=ol.hasoutput)
-
-    def on(self, query, full=False, all=False):
-        return self.overlay.on(query, full=full, all=all)
 
     def __get__(self, obj, typ):
         if obj is None:
             return self
         else:
-            return self.clone(partial_args=self.partial_args + (obj,))
+            return type(self)(
+                fn=self.fn,
+                info=self.info,
+                origin=self.origin,
+                partial_args=self.partial_args + (obj,),
+            )
 
     def __gcall__(self, *args, **kwargs):
-        with self.overlay as _:
-            with proceed(self):
-                interact("#enter", None, None, True)
-                for entry in self.fn(*self.partial_args, *args, **kwargs):
-                    interact("#yield", None, None, entry)
-                    yield entry
+        with proceed(self):
+            interact("#enter", None, None, True)
+            for entry in self.fn(*self.partial_args, *args, **kwargs):
+                interact("#yield", None, None, entry)
+                yield entry
 
     def __call__(self, *args, **kwargs):
         if self.isgenerator:
             return self.__gcall__(*args, **kwargs)
 
-        with self.overlay as callres:
-            with proceed(self):
-                interact("#enter", None, None, True)
-                rval = self.fn(*self.partial_args, *args, **kwargs)
-                callres["0"] = callres["value"] = rval
-
-        if self.return_object:
-            return callres
-        else:
-            return callres.value
+        with proceed(self):
+            interact("#enter", None, None, True)
+            return self.fn(*self.partial_args, *args, **kwargs)
 
     def __str__(self):
         return f"{self.fn.__name__}"

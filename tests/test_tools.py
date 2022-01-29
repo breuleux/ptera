@@ -1,7 +1,8 @@
 from ptera import tooled
+from ptera.selector import select
 from ptera.tools import between, every, gt, gte, lt, lte, throttle
 
-from .common import one_test_per_assert
+from .common import one_test_per_assert, tapping
 
 
 @tooled
@@ -17,9 +18,10 @@ def _r(*args):
 
 
 def _boucle(query, seq):
-    fn = boucle_d_or.using(x=query)
-    results = fn(seq)
-    return results.x.map("i")
+    query = select(query)
+    with tapping(query) as xs:
+        boucle_d_or(seq)
+    return xs[query.main.capture]
 
 
 @one_test_per_assert
