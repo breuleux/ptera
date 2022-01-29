@@ -1,13 +1,14 @@
 from giving import operators as op
 
-from .core import (
+from .interpret import interact
+from .overlay import (
     BaseOverlay,
     Overlay,
     PatternCollection,
+    PteraDecorator,
     PteraFunction,
-    interact,
+    tooled,
 )
-from .deco import PteraDecorator, tooled
 from .probe import Probe, global_probe, probing
 from .selector import select
 from .tags import Tag, TagSet, match_tag, tag

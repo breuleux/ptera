@@ -4,7 +4,8 @@ import pytest
 import rx
 
 from ptera import tooled
-from ptera.core import BaseOverlay, Total
+from ptera.interpret import Total
+from ptera.overlay import BaseOverlay
 from ptera.probe import global_probe, probing
 
 from .milk import cheese as ch, gouda

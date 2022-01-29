@@ -3,8 +3,8 @@ import inspect
 
 from giving import SourceProxy
 
-from .core import BaseOverlay, Immediate
-from .deco import tooled
+from .interpret import Immediate
+from .overlay import BaseOverlay, tooled
 from .selector import select
 from .tags import tag
 from .utils import ABSENT

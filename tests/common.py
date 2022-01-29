@@ -6,7 +6,8 @@ from textwrap import dedent
 
 from _pytest.assertion.rewrite import AssertionRewriter
 
-from ptera.core import BaseOverlay, Immediate, Total
+from ptera.interpret import Immediate, Total
+from ptera.overlay import BaseOverlay
 from ptera.selector import select
 
 

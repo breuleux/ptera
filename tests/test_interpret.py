@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from ptera import BaseOverlay, Overlay, tag, tooled
-from ptera.core import Capture, Immediate
+from ptera.interpret import Capture, Immediate
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
 
