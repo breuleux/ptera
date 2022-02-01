@@ -269,6 +269,22 @@ def test_find_tag():
     assert sel.parse("f(x) > y").all_tags[2] == set()
 
 
+@one_test_per_assert
+def test_all_captures():
+    assert sel.parse("f(x, !y, g(z))").all_captures == {"x", "y", "z"}
+    assert sel.parse("f(x as xx, !y, g(z))").all_captures == {"xx", "y", "z"}
+    assert sel.parse("f() as x").all_captures == {"x"}
+    assert sel.parse("f(x=3)").all_captures == {"x"}
+    assert sel.parse("g > f()").all_captures == set()
+
+
+@one_test_per_assert
+def test_value_evaluate():
+    assert sel.parse("x=3").value.eval(None) == 3
+    assert sel.parse("x=3.7").value.eval(None) == 3.7
+    assert sel.parse("x='wow'").value.eval(None) == "wow"
+
+
 def _encode(x):
     return sel.parse(x).encode()
 

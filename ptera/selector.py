@@ -102,7 +102,8 @@ class Element(ElementBase):
     def all_captures(self):
         if self.capture and not self.capture.startswith("/"):
             return {self.capture}
-        else:
+        else:  # pragma: no cover
+            # Does not currently happen
             return set()
 
     @cached_property
@@ -139,10 +140,7 @@ class Element(ElementBase):
         elif focus is None and self.focus:
             return self
         elif self.capture not in required:
-            if self.value is ABSENT:
-                return None
-            else:
-                return self.clone(capture=None).without_focus()
+            return None
         elif focus is not None:
             return self.without_focus()
         else:
