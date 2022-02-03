@@ -3,7 +3,7 @@ import sys
 import pytest
 import rx
 
-from ptera import tooled
+from ptera import SelectorError, tooled
 from ptera.interpret import Total
 from ptera.overlay import BaseOverlay
 from ptera.probe import global_probe, probing
@@ -171,7 +171,7 @@ def test_probe_same_var_twice():
 
 
 def test_bad_probe():
-    with pytest.raises(NameError):
+    with pytest.raises(SelectorError):
         global_probe("unknown > a")
 
 

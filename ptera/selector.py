@@ -2,6 +2,7 @@
 
 
 import builtins
+import inspect
 import re
 import sys
 from collections import defaultdict
@@ -158,6 +159,11 @@ class Element(ElementBase):
         )
         return rval
 
+    def wrap_functions(self, wrap):
+        return self.clone(
+            name=wrap(self.name),
+        )
+
     def encode(self):
         """Return a string representation of the selector."""
         if self.name is None and self.capture is not None:
@@ -269,6 +275,14 @@ class Call(ElementBase):
             ),
             captures=tuple(
                 cap.specialize(specializations) for cap in self.captures
+            ),
+        )
+
+    def wrap_functions(self, wrap):
+        return self.clone(
+            element=self.element.wrap_functions(wrap),
+            children=tuple(
+                child.wrap_functions(wrap) for child in self.children
             ),
         )
 
@@ -542,19 +556,37 @@ def dict_resolver(env):
     """Resolve a symbol from a dictionary, e.g. the globals directory."""
 
     def resolve(x):
-        if x.startswith("@"):
+        if x.startswith("/"):
+            import codefind
+
+            _, module, *parts = x.split("/")
+            co = codefind.find_code(*parts, module=module or "__main__")
+            funcs = [
+                fn
+                for fn in codefind.get_functions(co)
+                if inspect.isfunction(fn)
+                and not fn.__name__.endswith("__ptera_redirect")
+            ]
+            if not funcs:  # pragma: no cover
+                raise Exception(f"Reference `{x}` cannot be resolved.")
+            elif len(funcs) > 1:  # pragma: no cover
+                raise Exception(f"Reference `{x}` is ambiguous.")
+            (curr,) = funcs
+
+        elif x.startswith("@"):
             return getattr(tag_factory, x[1:])
 
-        start, *parts = x.split(".")
-        if start in env:
-            curr = env[start]
-        elif hasattr(builtins, start):
-            return getattr(builtins, start)
         else:
-            raise SelectorError(f"Could not resolve '{start}'.")
+            start, *parts = x.split(".")
+            if start in env:
+                curr = env[start]
+            elif hasattr(builtins, start):
+                return getattr(builtins, start)
+            else:
+                raise SelectorError(f"Could not resolve '{start}'.")
 
-        for part in parts:
-            curr = getattr(curr, part)
+            for part in parts:
+                curr = getattr(curr, part)
 
         return getattr(curr, "__ptera__", curr)
 
@@ -734,9 +766,7 @@ def _select(pattern, context="root"):
     return pattern
 
 
-def select(
-    s, env=None, env_wrapper=None, skip_modules=[], skip_frames=0, strict=False
-):
+def select(s, env=None, skip_modules=[], skip_frames=0, strict=False):
     """Create a selector from a string.
 
     Arguments:
@@ -757,14 +787,18 @@ def select(
     if env is None:
         fr = sys._getframe(skip_frames + 1)
         env = _find_eval_env(s, fr, skip=["ptera", "contextlib", *skip_modules])
-        if env_wrapper is not None:
-            env = env_wrapper(env)
     pattern = _select(s)
     rval = _resolve(pattern, env, count())
 
     if strict:
-        problems = rval.problems()
-        if problems:
-            raise SelectorError(repr(s) + ": " + "\n".join(problems))
+        verify(rval, display=s)
 
     return rval
+
+
+def verify(selector, display=None):
+    display = display or selector
+    problems = selector.problems()
+    if problems:
+        raise SelectorError(repr(display) + ": " + "\n".join(problems))
+    return selector

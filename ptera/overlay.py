@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from itertools import count
 
 from .interpret import Frame, Immediate, Total, interact
-from .selector import check_element
+from .selector import check_element, select, verify
 from .transform import transform
 from .utils import autocreate
 
@@ -291,3 +291,17 @@ class PteraDecorator:
 
 
 tooled = PteraDecorator()
+
+
+def autotool(selector):
+    def _wrap(fn):
+        tooled.inplace(fn)
+        if hasattr(fn, "__ptera__"):
+            return fn.__ptera__
+        else:
+            return fn
+
+    rval = select(selector)
+    rval = rval.wrap_functions(_wrap)
+    verify(rval)
+    return rval
