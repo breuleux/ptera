@@ -9,6 +9,10 @@ from .utils import ABSENT
 global_probes = set()
 
 
+def _identity(x):
+    return x
+
+
 class Probe(SourceProxy):
     """Observable which generates a stream of values from program variables.
 
@@ -25,12 +29,18 @@ class Probe(SourceProxy):
     """
 
     def __init__(self, *selectors, raw=False, _obs=None, _root=None):
+        # Note: the private _obs and _root parameters are used to "fork"
+        # the probe when using operators on it while keeping a reference
+        # to the root or master probe.
+
         if not selectors and _obs is None:
             raise TypeError("Probe() takes at least one selector argument.")
 
         super().__init__(_obs=_obs, _root=_root)
 
         if selectors:
+            # autotool will instrument the functions referred to by the
+            # selector inplace
             self._selectors = [autotool(selector) for selector in selectors]
             rules = [
                 Immediate(sel, intercept=self._emit) for sel in self._selectors
@@ -39,7 +49,7 @@ class Probe(SourceProxy):
             self._raw = raw
             self._activated = False
 
-    def override(self, setter=lambda x: x):
+    def override(self, setter=_identity):
         """Override the value of the focus variable using a setter function.
 
         .. code-block:: python
@@ -71,7 +81,7 @@ class Probe(SourceProxy):
                 A function that takes a value from the pipeline and produces the value
                 to set the focus variable to.
 
-                * If not set, the value from the stream is used as-is.
+                * If not provided, the value from the stream is used as-is.
                 * If not callable, set the variable to the value of setter
         """
         if not callable(setter):
@@ -103,7 +113,7 @@ class Probe(SourceProxy):
             **Important:** override() only overrides the **focus variable**. The focus
             variable is the one to the right of ``>``, or the one prefixed with ``!``.
 
-            See :meth:`~ptera.probe.ProbeProxy.override`.
+            See :meth:`~ptera.probe.Probe.override`.
 
         Arguments:
             setter: A function that takes a value from the pipeline as keyword arguments
@@ -149,6 +159,10 @@ class Probe(SourceProxy):
         return self._value
 
     def _enter(self):
+        # This is called on the root probe by the __enter__ method of a child.
+        # So e.g. `with probing("f > x").min(): ...` will call __enter__ on the
+        # object returned by min, but _enter is called on the main probe
+        # returned by probing (stored in self._root)
         if self._activated:
             raise Exception("An instance of Probe can only be entered once")
 
@@ -158,6 +172,7 @@ class Probe(SourceProxy):
         return self
 
     def _exit(self):
+        # This is called on the root probe by the __exit__ method of a child.
         self._ol.__exit__(None, None, None)
         global_probes.remove(self)
 
@@ -176,8 +191,6 @@ def probing(*selectors, raw=False):
 
     Arguments:
         selectors: The selector strings describing the variables to probe (at least one).
-        do: A function to execute on each data point.
-        format: A format string (implies do=print)
         raw: Defaults to False. If True, produce a stream of Capture objects that
             contain extra information about the capture.
     """
@@ -209,5 +222,8 @@ def global_probe(*selectors, raw=False):
 
 @atexit.register
 def _terminate_global_probes():  # pragma: no cover
+    # This closes active probes at program exit. This is important for global
+    # probes if reduction operations like min() are requested, because it tells
+    # them that there is no more data and that they can proceed.
     for probe in list(global_probes):
         probe.__exit__(None, None, None)
