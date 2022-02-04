@@ -4,9 +4,9 @@ from .interpret import interact
 from .overlay import (
     BaseOverlay,
     Overlay,
-    PatternCollection,
     PteraDecorator,
     PteraFunction,
+    SelectorCollection,
     tooled,
 )
 from .probe import Probe, global_probe, probing

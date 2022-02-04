@@ -53,55 +53,64 @@ def fits_selector(pfn, selector):
     return capmap
 
 
-class PatternCollection:
-    current = ContextVar("PatternCollection.current", default=None)
+class SelectorCollection:
+    current = ContextVar("SelectorCollection.current", default=None)
 
-    def __init__(self, patterns=None):
-        self.patterns = list(patterns or [])
+    def __init__(self, selectors=None):
+        self.selectors = list(selectors or [])
 
     def proceed(self, fn):
         frame = Frame(fn)
-        next_patterns = []
-        to_process = deque(self.patterns)
+        next_selectors = []
+        to_process = deque(self.selectors)
         while to_process:
-            pattern, acc = to_process.pop()
-            if not pattern.immediate:
-                next_patterns.append((pattern, acc))
-            cachekey = (fn, pattern)
+            selector, acc = to_process.pop()
+            if not selector.immediate:
+                next_selectors.append((selector, acc))
+            cachekey = (fn, selector)
             capmap = _selector_fit_cache.get(cachekey)
             if capmap is None:
-                capmap = fits_selector(fn, pattern)
+                capmap = fits_selector(fn, selector)
                 _selector_fit_cache[cachekey] = capmap
             if capmap is not False:
                 is_template = acc.template
-                if pattern.focus or is_template:
+                if selector.focus or is_template:
                     acc = acc.fork()
                 frame.register(acc, capmap, close_at_exit=is_template)
-                for child in pattern.children:
+                for child in selector.children:
                     # if child.collapse:
                     #     # This feature is related to the >> operator which
                     #     # has been removed.
                     #     to_process.append((child, acc))
                     # else:
-                    next_patterns.append((child, acc))
-        rval = PatternCollection(next_patterns)
+                    next_selectors.append((child, acc))
+        rval = SelectorCollection(next_selectors)
         return frame, rval
 
 
 class proceed:
+    """Context manager to wrap execution of a function.
+
+    This pushes a new :class:`~ptera.interpret.Frame` on top and proceeds
+    using the current :class:`~ptera.overlay.SelectorCollection`.
+
+    Arguments:
+        fn: The function that will be executed.
+    """
+
     def __init__(self, fn):
         self.fn = fn
 
     def __enter__(self):
-        self.curr = PatternCollection.current.get() or PatternCollection([])
+        self.curr = SelectorCollection.current.get() or SelectorCollection([])
         self.frame, new = self.curr.proceed(self.fn)
         self.frame_reset = Frame.top.set(self.frame)
-        self.reset = PatternCollection.current.set(new)
+        self.reset = SelectorCollection.current.set(new)
         return new
 
     def __exit__(self, typ, exc, tb):
         if self.curr is not None:
-            PatternCollection.current.reset(self.reset)
+            SelectorCollection.current.reset(self.reset)
         Frame.top.reset(self.frame_reset)
         self.frame.exit()
 
@@ -112,26 +121,46 @@ class BaseOverlay:
 
     def __enter__(self):
         if self.handlers:
-            collection = PatternCollection(self.handlers)
-            curr = PatternCollection.current.get()
+            collection = SelectorCollection(self.handlers)
+            curr = SelectorCollection.current.get()
             if curr is not None:
-                collection.patterns = curr.patterns + collection.patterns
-            self.reset = PatternCollection.current.set(collection)
+                collection.selectors = curr.selectors + collection.selectors
+            self.reset = SelectorCollection.current.set(collection)
             return collection
 
     def __exit__(self, typ, exc, tb):
         if self.handlers:
-            PatternCollection.current.reset(self.reset)
+            SelectorCollection.current.reset(self.reset)
 
 
 class Overlay:
+    """An Overlay contains a set of selectors and associated rules.
+
+    When used as a context manager, the rules are applied within the with
+    block.
+    """
+
     def __init__(self, rules=()):
         self.rules = list(rules)
 
     def fork(self):
+        """Create a clone of this Overlay."""
         return type(self)(rules=self.rules)
 
     def register(self, selector, fn, full=False, all=False, immediate=True):
+        """Register a function to trigger on a selector.
+
+        Arguments:
+            selector: The selector to use.
+            fn: The function to register.
+            full: (default False) Whether to return a dictionary of Capture objects.
+            all: (default False) If not full, whether to return a list of
+                results for each variable or a single value.
+            immediate: (default True) Whether to use an
+                :func:`~ptera.interpret.Immediate` accumulator.
+                If False, use a :func:`~ptera.interpret.Total` accumulator.
+        """
+
         def mapper(args):
             if all:
                 args = {key: cap.values for key, cap in args.items()}
@@ -143,6 +172,18 @@ class Overlay:
         self.rules.append(ruleclass(selector, mapper))
 
     def on(self, selector, **kwargs):
+        """Make a decorator for a function to trigger on a selector.
+
+        Arguments:
+            selector: The selector to use.
+            full: (default False) Whether to return a dictionary of Capture objects.
+            all: (default False) If not full, whether to return a list of
+                results for each variable or a single value.
+            immediate: (default True) Whether to use an
+                :func:`~ptera.interpret.Immediate` accumulator.
+                If False, use a :func:`~ptera.interpret.Total` accumulator.
+        """
+
         def deco(fn):
             self.register(selector, fn, **kwargs)
             return fn
@@ -150,20 +191,40 @@ class Overlay:
         return deco
 
     def tap(self, selector, dest=None, **kwargs):
+        """Tap values from a selector into a list.
+
+        Arguments:
+            selector: The selector to use.
+            dest: The list in which to append. If None, a list is created.
+
+        Returns:
+            The list in which to append.
+        """
         dest = [] if dest is None else dest
         self.register(selector, dest.append, **kwargs)
         return dest
 
     def tweak(self, values):
+        """Override the focus variables of selectors.
+
+        Arguments:
+            values: A ``{selector: value}`` dictionary.
+        """
         self.rules.extend(
             [
-                Immediate(patt, intercept=(lambda _, _v=v: _v))
-                for patt, v in values.items()
+                Immediate(sel, intercept=(lambda _, _v=v: _v))
+                for sel, v in values.items()
             ]
         )
         return self
 
-    def rewrite(self, values, full=False):
+    def rewrite(self, rewriters, full=False):
+        """Override the focus variables of selectors.
+
+        Arguments:
+            rewriters: A ``{selector: override_function}`` dictionary.
+        """
+
         def _wrapfn(fn, full=True):
             @functools.wraps(fn)
             def newfn(args):
@@ -175,25 +236,37 @@ class Overlay:
 
         self.rules.extend(
             [
-                Immediate(patt, intercept=_wrapfn(v, full=full))
-                for patt, v in values.items()
+                Immediate(sel, intercept=_wrapfn(v, full=full))
+                for sel, v in rewriters.items()
             ]
         )
         return self
 
     @autocreate
     def tweaking(self, values):
+        """Fork this Overlay and :func:`~ptera.overlay.Overlay.tweak`.
+
+        Can be called on the class (``with Overlay.tweaking(...):``).
+        """
         ol = self.fork()
         return ol.tweak(values)
 
     @autocreate
     def rewriting(self, values, full=False):
+        """Fork this Overlay and :func:`~ptera.overlay.Overlay.rewrite`.
+
+        Can be called on the class (``with Overlay.rewriting(...):``).
+        """
         ol = self.fork()
         return ol.rewrite(values, full=full)
 
     @autocreate
     @contextmanager
     def tapping(self, selector, dest=None, **kwargs):
+        """Context manager yielding a list in which results will be accumulated.
+
+        Can be called on the class (``with Overlay.tapping(...):``).
+        """
         ol = self.fork()
         dest = ol.tap(selector, dest=dest, **kwargs)
         with ol:

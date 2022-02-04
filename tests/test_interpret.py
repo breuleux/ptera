@@ -42,18 +42,18 @@ def test_normal_call():
     assert double_brie(3, 4) == 68
 
 
-def _test(f, args, pattern):
-    with full_tapping(pattern) as results:
+def _test(f, args, sel):
+    with full_tapping(sel) as results:
         f(*args)
     return results
 
 
-def _dbrie(pattern):
-    return _test(double_brie, (2, 10), pattern)
+def _dbrie(sel):
+    return _test(double_brie, (2, 10), sel)
 
 
 @one_test_per_assert
-def test_patterns():
+def test_selectors():
     # Simple, test focus
     assert _dbrie("*(x)") == [{"x": [2]}, {"x": [10]}]
     assert _dbrie("*(!x)") == [{"x": [2]}, {"x": [10]}]

@@ -731,39 +731,39 @@ class MatchFunction:
         self.fn = fn
 
 
-def _resolve(pattern, env, cnt):
-    if isinstance(pattern, Call):
-        el = _resolve(pattern.element, env, cnt)
-        return pattern.clone(
+def _resolve(selector, env, cnt):
+    if isinstance(selector, Call):
+        el = _resolve(selector.element, env, cnt)
+        return selector.clone(
             element=el,
-            captures=tuple(_resolve(x, env, cnt) for x in pattern.captures),
-            children=tuple(_resolve(x, env, cnt) for x in pattern.children),
+            captures=tuple(_resolve(x, env, cnt) for x in selector.captures),
+            children=tuple(_resolve(x, env, cnt) for x in selector.children),
         )
-    elif isinstance(pattern, Element):
-        name = _eval(pattern.name, env)
-        category = _eval(pattern.category, env)
-        value = _eval(pattern.value, env)
+    elif isinstance(selector, Element):
+        name = _eval(selector.name, env)
+        category = _eval(selector.category, env)
+        value = _eval(selector.value, env)
         capture = (
-            f"/{next(cnt)}" if pattern.capture is None else pattern.capture
+            f"/{next(cnt)}" if selector.capture is None else selector.capture
         )
         if category is not None and not isinstance(category, Tag):
-            raise TypeError("A pattern can only be a Tag.")
-        return pattern.clone(
+            raise TypeError("A selector's category can only be a Tag.")
+        return selector.clone(
             name=name, category=category, value=value, capture=capture
         )
 
 
-def _select(pattern, context="root"):
-    if isinstance(pattern, str):
-        pattern = parse(pattern)
-    if isinstance(pattern, Element):
-        pattern = Call(
+def _select(selector, context="root"):
+    if isinstance(selector, str):
+        selector = parse(selector)
+    if isinstance(selector, Element):
+        selector = Call(
             element=Element(name=None),
-            captures=(pattern.with_focus(),),
+            captures=(selector.with_focus(),),
             immediate=False,
         )
-    assert isinstance(pattern, Call)
-    return pattern
+    assert isinstance(selector, Call)
+    return selector
 
 
 def select(s, env=None, skip_modules=[], skip_frames=0, strict=False):
@@ -787,8 +787,8 @@ def select(s, env=None, skip_modules=[], skip_frames=0, strict=False):
     if env is None:
         fr = sys._getframe(skip_frames + 1)
         env = _find_eval_env(s, fr, skip=["ptera", "contextlib", *skip_modules])
-    pattern = _select(s)
-    rval = _resolve(pattern, env, count())
+    sel = _select(s)
+    rval = _resolve(sel, env, count())
 
     if strict:
         verify(rval, display=s)
