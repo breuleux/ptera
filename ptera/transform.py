@@ -1,4 +1,4 @@
-"""Create objects out of functions."""
+"""Code transform that instruments probed functions."""
 
 import ast
 import inspect
@@ -18,11 +18,25 @@ _IDX = count()
 
 
 class Key:
+    """Represents an attribute or index on a variable.
+
+    Attributes:
+        type: Either "attr" or "index".
+        value: The value of the attribute or index.
+    """
+
     def __init__(self, type, value):
         self.type = type
         self.value = value
 
     def affix_to(self, sym):
+        """Return a string representing getting the key from sym.
+
+        >>> Key("attr", "y").affix_to("x")
+        "x.y"
+        >>> Key("index", "y").affix_to("x")
+        "x['y']"
+        """
         if self.type == "attr":
             return f"{sym}.{self.value}"
         elif self.type == "index":
@@ -58,13 +72,14 @@ class PteraNameError(NameError):
         super().__init__(msg)
 
     def info(self):
+        """Return information about the missing variable."""
         return self.function.info[self.varname]
 
 
 def name_error(varname, function, pop_frames=1):
     """Raise a PteraNameError pointing to the right location."""
     fr = inspect.currentframe()
-    for i in range(pop_frames + 1):
+    for _ in range(pop_frames + 1):
         if fr:
             fr = fr.f_back
     err = PteraNameError(varname, function)
@@ -80,7 +95,7 @@ def name_error(varname, function, pop_frames=1):
         return err
 
 
-def readline_mock(src):
+def _readline_mock(src):
     """Line reader for the given text.
 
     This is meant to be used with Python's tokenizer.
@@ -99,7 +114,7 @@ def readline_mock(src):
     return readline
 
 
-def gensym():
+def _gensym():
     """Generate a fresh symbol."""
     return f"_ptera__{next(_IDX)}"
 
@@ -421,10 +436,10 @@ class PteraTransformer(NodeTransformer):
     def visit_NamedExpr(self, node):
         """Rewrite an assignment expression.
 
-        Before::
+        Before:
             x := y + z
 
-        After::
+        After:
             x := _ptera_interact('x', None, y + z)
         """
         return self.make_interaction(
@@ -438,10 +453,10 @@ class PteraTransformer(NodeTransformer):
     def visit_AnnAssign(self, node):
         """Rewrite an annotated assignment statement.
 
-        Before::
+        Before:
             x: int
 
-        After::
+        After:
             x: int = _ptera_interact('x', int)
         """
         return self.make_interaction(
@@ -451,15 +466,15 @@ class PteraTransformer(NodeTransformer):
     def visit_Assign(self, node):
         """Rewrite an assignment statement.
 
-        Before::
+        Before:
             x = y + z
 
-        After::
+        After:
             x = _ptera_interact('x', None, y + z)
         """
         (target,) = node.targets
         if isinstance(target, ast.Tuple):
-            var_all = gensym()
+            var_all = _gensym()
             ass_all = ast.copy_location(
                 ast.Assign(
                     targets=[ast.Name(id=var_all, ctx=ast.Store())],
@@ -489,10 +504,10 @@ class PteraTransformer(NodeTransformer):
     def visit_Import(self, node):
         """Rewrite an import statement.
 
-        Before::
+        Before:
             import kangaroo
 
-        After::
+        After:
             import kangaroo
             kangaroo = _ptera_interact('kangaroo', None, kangaroo)
         """
@@ -501,10 +516,10 @@ class PteraTransformer(NodeTransformer):
     def visit_ImportFrom(self, node):
         """Rewrite an import statement.
 
-        Before::
+        Before:
             from kangaroo import jump
 
-        After::
+        After:
             from kangaroo import jump
             jump = _ptera_interact('jump', None, jump)
         """
@@ -520,7 +535,14 @@ class PteraTransformer(NodeTransformer):
         return stmts
 
 
-class Conformer:
+class _Conformer:
+    """Implements codefind's __conform__ protocol.
+
+    This allows a package like jurigged to hot patch functions that
+    are modified by ptera, and ptera will be able to re-run the
+    tooling on the new version. Might not work perfectly reliably.
+    """
+
     __slots__ = ("code", "ptera_fn", "interact")
 
     def __init__(self, fn, ptera_fn, interact):
@@ -545,7 +567,7 @@ class Conformer:
         self.code = new_code
 
 
-class Resolver:
+class _Resolver:
     def __init__(self, *dicts):
         self.dicts = dicts
 
@@ -557,10 +579,28 @@ class Resolver:
 
 
 def transform(fn, interact):
+    """Return an instrumented version of fn.
+
+    Arguments:
+        fn: The function to instrument.
+        interact: The function to call each time the value of an instrumented
+          variable is changed. It receives the arguments
+          ``(symbol, key, category, value)``
+          (see :func:`~ptera.interact.interact`)
+
+    Returns:
+        A (newfn, info) tuple.
+
+        * newfn: A new function that is an instrumented version of the old one.
+        * info: A dictionary mapping each instrumented variable to information
+          about whether it is local or global, and comments about the variable.
+    """
+
     src = dedent(inspect.getsource(fn))
 
+    # Scrape the comments in the function's source and map them to lines.
     comments = {}
-    for tok in tokenize.tokenize(readline_mock(src)):
+    for tok in tokenize.tokenize(_readline_mock(src)):
         if tok.type == tokenize.COMMENT:
             if tok.line.strip().startswith("#"):
                 line = tok.end[0]
@@ -571,12 +611,15 @@ def transform(fn, interact):
                     )
                     del comments[line]
 
+    # Perform the transform
     filename = inspect.getsourcefile(fn)
     tree = ast.parse(src, filename)
     tree = tree.body[0]
     assert isinstance(tree, ast.FunctionDef)
     tree.decorator_list = []
-    prefix = gensym()
+    # We put the interact function in the variable {prefix}_interact
+    # so that it cannot clash with other interact functions
+    prefix = _gensym()
     transformer = PteraTransformer(tree, comments, prefix)
     new_tree = transformer.result
     ast.fix_missing_locations(new_tree)
@@ -589,7 +632,9 @@ def transform(fn, interact):
     # We add a few extra variables in the existing namespace
     glb = fn.__globals__
     glb[f"{prefix}_interact"] = interact
-    glb["__ptera_globals"] = Resolver(glb, __builtins__)
+    # The other variables do not need the prefix because they are always
+    # the same for the same globals
+    glb["__ptera_globals"] = _Resolver(glb, __builtins__)
     glb["__ptera_ABSENT"] = ABSENT
     glb["__ptera_Key"] = Key
     glb["__ptera_get_tags"] = get_tags
@@ -643,5 +688,5 @@ def transform(fn, interact):
         for k in all_vars
     }
 
-    actual_fn._conformer = Conformer(fn, actual_fn, interact)
+    actual_fn._conformer = _Conformer(fn, actual_fn, interact)
     return actual_fn, info
