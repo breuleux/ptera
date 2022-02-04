@@ -229,7 +229,7 @@ class PteraFunction:
                 partial_args=self.partial_args + (obj,),
             )
 
-    def __gcall__(self, *args, **kwargs):
+    def _generator_call(self, *args, **kwargs):
         with proceed(self):
             interact("#enter", None, None, True)
             for entry in self.fn(*self.partial_args, *args, **kwargs):
@@ -238,11 +238,13 @@ class PteraFunction:
 
     def __call__(self, *args, **kwargs):
         if self.isgenerator:
-            return self.__gcall__(*args, **kwargs)
+            return self._generator_call(*args, **kwargs)
 
         with proceed(self):
             interact("#enter", None, None, True)
-            return self.fn(*self.partial_args, *args, **kwargs)
+            rval = self.fn(*self.partial_args, *args, **kwargs)
+            rval = interact("#value", None, None, rval)
+            return rval
 
     def __str__(self):
         return f"{self.fn.__name__}"

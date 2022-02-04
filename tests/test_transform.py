@@ -86,6 +86,7 @@ def wrap(fn, all=False):
         overrides.clear()
         overrides.update(ovrd)
         rval = new_fn(*args)
+        interact("#value", None, None, rval)
         if all:
             return results
         else:
@@ -108,7 +109,7 @@ def iceberg(
     return sum([x, y, z])
 
 
-_iceberg_line = 98
+_iceberg_line = 99
 
 
 @wrap

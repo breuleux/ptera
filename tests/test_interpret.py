@@ -288,6 +288,19 @@ def test_misc():
         assert sumsquares(3, 4) == 9
 
 
+@tooled
+def randnum():
+    return 4
+
+
+def test_tweak_return():
+    with Overlay.tweaking({"randnum > #value": 13}):
+        assert randnum() == 13
+
+    with Overlay.tweaking({"randnum() as x": 13}):
+        assert randnum() == 13
+
+
 def test_capture():
     cap = Capture(parse("x"))
     assert cap.name == "x"

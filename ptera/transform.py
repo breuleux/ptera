@@ -420,19 +420,6 @@ class PteraTransformer(NodeTransformer):
             node,
         )
 
-    def visit_Return(self, node):
-        new_value = ast.Call(
-            func=ast.Name(id=f"{self.prefix}_interact", ctx=ast.Load()),
-            args=[
-                ast.Constant(value="#value"),
-                ast.Constant(value=None),
-                ast.Constant(value=None),
-                self.visit(node.value or ast.Constant(value=None)),
-            ],
-            keywords=[],
-        )
-        return ast.copy_location(ast.Return(value=new_value), node)
-
     def visit_NamedExpr(self, node):
         """Rewrite an assignment expression.
 
