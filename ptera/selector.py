@@ -51,7 +51,7 @@ class InternedMC(type):
         return cls._cache[key]
 
 
-class ElementBase(metaclass=InternedMC):
+class Selector(metaclass=InternedMC):
     def check_captures(self, captures):
         for v in self.all_values:
             if v.capture in captures:
@@ -70,7 +70,7 @@ class ElementBase(metaclass=InternedMC):
     __repr__ = __str__
 
 
-class Element(ElementBase):
+class Element(Selector):
     """Represents a variable or some other atom."""
 
     _constructor_defaults = {
@@ -182,7 +182,7 @@ class Element(ElementBase):
         return f"{focus}{name}{cap}{cat}{val}"
 
 
-class Call(ElementBase):
+class Call(Selector):
     """Represents a call in the call stack."""
 
     _constructor_defaults = {

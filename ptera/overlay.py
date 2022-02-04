@@ -9,10 +9,18 @@ from .selector import check_element, select, verify
 from .transform import transform
 from .utils import autocreate, redirect
 
-_pattern_fit_cache = {}
+# Cache whether functions match selectors
+_selector_fit_cache = {}
 
 
 def fits_selector(pfn, selector):
+    """Check whether a PteraFunction matches a selector.
+
+    Arguments:
+        pfn: The PteraFunction.
+        selector: The selector. We are trying to match the
+            outer scope.
+    """
     fname = pfn.origin
     fcat = pfn.fn.__annotations__.get("return", None)
     fvars = pfn.info
@@ -24,6 +32,8 @@ def fits_selector(pfn, selector):
 
     for cap in selector.captures:
         if cap.name is None:
+            # Capture is generic (*, $x)
+            # Check that there is a matching variable
             varnames = [
                 var
                 for var, info in fvars.items()
@@ -33,6 +43,8 @@ def fits_selector(pfn, selector):
                 return False
             capmap[cap] = varnames
         else:
+            # Check that a variable by this name exists in the
+            # function's namespace
             name = cap.name.split(".")[0]
             if not cap.name.startswith("#") and name not in fvars:
                 return False
@@ -56,10 +68,10 @@ class PatternCollection:
             if not pattern.immediate:
                 next_patterns.append((pattern, acc))
             cachekey = (fn, pattern)
-            capmap = _pattern_fit_cache.get(cachekey)
+            capmap = _selector_fit_cache.get(cachekey)
             if capmap is None:
                 capmap = fits_selector(fn, pattern)
-                _pattern_fit_cache[cachekey] = capmap
+                _selector_fit_cache[cachekey] = capmap
             if capmap is not False:
                 is_template = acc.template
                 if pattern.focus or is_template:
@@ -261,6 +273,13 @@ tooled = PteraDecorator()
 
 
 def autotool(selector):
+    """Automatically tool functions inplace.
+
+    Arguments:
+        selector: The selector to use as a basis for the tooling. Any
+            function it refers to will be tooled.
+    """
+
     def _wrap(fn):
         tooled.inplace(fn)
         if hasattr(fn, "__ptera__"):

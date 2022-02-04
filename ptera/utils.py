@@ -45,6 +45,11 @@ def keyword_decorator(deco):
 
 
 class autocreate:
+    """Automatically create an instance when called on the class.
+
+    Basically makes it so that ``Klass.f()`` is equivalent to ``Klass().f()``.
+    """
+
     def __init__(self, fn):
         self.fn = fn
 
