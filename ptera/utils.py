@@ -1,4 +1,5 @@
 import functools
+from itertools import count
 
 
 class Named:
@@ -51,3 +52,35 @@ class autocreate:
         if obj is None:
             obj = objtype()
         return self.fn.__get__(obj, objtype)
+
+
+_c = count()
+_redirector = """
+def {}(*args, **kwargs):
+    return {}(*args, **kwargs)
+"""
+
+
+def redirect(fn, new_fn):
+    """Redirect fn to new_fn.
+
+    After this, calling fn(...) will be equivalent to calling new_fn(...).
+    """
+    # We must create a unique global variable to avoid clobbering the same
+    # reference with multiple invocations of redirect in the same global
+    # scope.
+    uniq = f"____ptera_redirect_{next(_c)}"
+    fname = f"{fn.__name__}__ptera_redirect"
+    glb = {}
+    exec(_redirector.format(fname, uniq), glb)
+    # The new code will still use the same globals, so we need to inject
+    # the new function in there. This is why we generated a unique name.
+    fn.__globals__[uniq] = new_fn
+    # We replace the code pointer
+    try:
+        from codefind import code_registry
+
+        code_registry.update_cache_entry(fn, fn.__code__, glb[fname].__code__)
+    except ImportError:  # pragma: no cover
+        pass
+    fn.__code__ = glb[fname].__code__
