@@ -1,3 +1,11 @@
+"""Create events on transformed functions based on selectors.
+
+There are some extra features here compared to the standard Probe interface,
+namely :class:`~ptera.interpret.Total` which can accumulate
+multiple values for non-focus variables and is only triggered when the
+selector's outer function finishes.
+"""
+
 from collections import defaultdict
 from contextvars import ContextVar
 
@@ -7,6 +15,12 @@ from .utils import ABSENT
 
 
 class Frame:
+    """Represents an execution frame for a tooled function.
+
+    Class attribute:
+        top: A context variable containing the top frame. Use
+            ``Frame.top.get()`` to get it.
+    """
 
     top = ContextVar("Frame.top", default=None)
 
@@ -16,6 +30,16 @@ class Frame:
         self.to_close = []
 
     def register(self, acc, captures, close_at_exit):
+        """Register an accumulator for a certain set of captures.
+
+        Arguments:
+            acc: An Accumulator.
+            captures: A dictionary of elements to sets of matching
+                variable names for which the accumulator will be
+                triggered.
+            close_at_exit: Whether to call the accumulator's close
+                function when the frame exits.
+        """
         for element, varnames in captures.items():
             for v in varnames:
                 self.accumulators[v].append((element, acc))
@@ -23,14 +47,28 @@ class Frame:
             self.to_close.append(acc)
 
     def work_on(self, varname, key, category):
-        return _WorkingFrame(varname, key, category, self.accumulators)
+        """Return a :class:`WorkingFrame` for the given variable.
+
+        Arguments:
+            varname: The name of the variable.
+            key: The key (attribute or index) that is being set on the
+                variable.
+            category: The variable's category or tag.
+        """
+        return WorkingFrame(varname, key, category, self.accumulators)
 
     def exit(self):
+        """Exit the frame.
+
+        This triggers the close function on available accumulators.
+        """
         for acc in self.to_close:
             acc.close()
 
 
-class _WorkingFrame:
+class WorkingFrame:
+    """Context manager to facilitate working on a variable."""
+
     def __init__(self, varname, key, category, accumulators):
         self.varname = varname
         self.key = key
@@ -48,6 +86,17 @@ class _WorkingFrame:
         pass
 
     def intercept(self, tentative):
+        """Execute the intercepts of all matching accumulators.
+
+        The last intercept that does not return ABSENT wins.
+
+        Arguments:
+            tentative: The tentative value for the variable, as
+                provided in the original code.
+
+        Returns:
+            The value the intercepted variable should take.
+        """
         rval = ABSENT
         for element, acc in self.accumulators:
             if element.focus and acc.intercept:
@@ -59,16 +108,32 @@ class _WorkingFrame:
         return rval
 
     def log(self, value):
+        """Log a value for the variable."""
         for element, acc in self.accumulators:
             acc.log(element, self.varname, self.category, value)
 
     def trigger(self):
+        """Trigger an event using what was accumulated."""
         for element, acc in self.accumulators:
             if element.focus and acc.trigger:
                 acc.trigger()
 
 
 class Capture:
+    """Represents captured values for a variable.
+
+    Arguments:
+        element: The selector element for which we are capturing.
+
+    Attributes:
+        element: The selector element for which we are capturing.
+        capture: The variable name or alias corresponding to the
+            capture (same as element.capture).
+        names: The list of names of the variables that match the
+            element.
+        values: The list of values taken by matching variables.
+    """
+
     def __init__(self, element):
         self.element = element
         self.capture = element.capture
@@ -77,6 +142,12 @@ class Capture:
 
     @property
     def name(self):
+        """Name of the capture.
+
+        For a generic element such as ``$x``, there may be multiple
+        names, in which case the ``.names`` attribute should be used
+        instead.
+        """
         if self.element.name is not None:
             return self.element.name
         if len(self.names) == 1:
@@ -90,6 +161,11 @@ class Capture:
 
     @property
     def value(self):
+        """Value of the capture.
+
+        This only works if there is a unique value. Otherwise, you must
+        use ``.values``.
+        """
         if len(self.values) == 1:
             return self.values[0]
         elif len(self.values) == 0:
@@ -100,16 +176,19 @@ class Capture:
             )
 
     def accum(self, varname, value):
+        """Accumulate a variable name and value."""
         assert varname is not None
         self.names.append(varname)
         self.values.append(value)
 
     def set(self, varname, value):
+        """Set a variable name and value, overwriting the previous capture."""
         assert varname is not None
         self.names = [varname]
         self.values = [value]
 
     def snapshot(self):
+        """Return a snapshot of the capture at this moment."""
         cap = Capture(self.element)
         cap.names = list(self.names)
         cap.values = list(self.values)
@@ -122,6 +201,26 @@ class Capture:
 
 
 class BaseAccumulator:
+    """Accumulates the values of variables in Capture objects.
+
+    Under certain conditions, call user-provided event functions.
+
+    Any function given to the constructor must take one argument which is the
+    dictionary of captures.
+
+    Arguments:
+        pattern: The selector to use.
+        trigger: The function to call when the focus variable is set.
+        intercept: The function to call to override the value of the
+            focus variable.
+        close: The function to call when the selector is closed.
+        parent: The parent Accumulator.
+        template: Whether the Accumulator is a "template" and should be
+            cloned prior to accumulating anything.
+        check: Whether to filter that the values are correct in a selector
+            such as ``f(x=1) > y``. Otherwise the ``=1`` would be ignored.
+    """
+
     def __init__(
         self,
         *,
@@ -164,6 +263,11 @@ class BaseAccumulator:
         return new_fn if (fn and check and self.pattern.hasval) else fn
 
     def fork(self, pattern=None):
+        """Fork the Accumulator, possibly with a new pattern.
+
+        Children Accumulators can accumulate new data while sharing what is
+        accumulated by their parents.
+        """
         parent = None if self.template else self
         return type(self)(
             pattern=pattern or self.pattern,
@@ -179,6 +283,7 @@ class BaseAccumulator:
         return self
 
     def getcap(self, element):
+        """Get the Capture object for a leaf element."""
         if element.capture not in self.captures:
             cap = Capture(element)
             self.captures[element.capture] = cap
@@ -187,6 +292,10 @@ class BaseAccumulator:
             return self.captures[element.capture]
 
     def build(self):
+        """Build the dictionary of captures.
+
+        The built dictionary includes captures from the parents.
+        """
         if self.parent is None:
             return self.captures
         rval = {}
@@ -220,6 +329,25 @@ class BaseAccumulator:
 
 
 class Total(BaseAccumulator):
+    """Accumulator usually triggered when the selector's outer function ends.
+
+    The Total accumulator keeps all values taken by the variables in the
+    selector for each value taken by the focus variable. For example, if the
+    selector is ``f(x) > g(!y) > h(z)`` and h is called multiple times for
+    multiple values of ``z``, they will all be accumulated together. However, if
+    ``y`` is set multiple times, there will be multiple events.
+
+    Any function given to the constructor must take one argument which is the
+    dictionary of captures.
+
+    Arguments:
+        pattern: The selector to use.
+        close: The function to call when the selector is closed.
+        trigger: The function to call when the focus variable is set.
+        intercept: The function to call to override the value of the
+            focus variable.
+    """
+
     def __init__(self, pattern, close, trigger=None, **kwargs):
         super().__init__(
             pattern=pattern, trigger=trigger, close=close, **kwargs
@@ -231,6 +359,13 @@ class Total(BaseAccumulator):
             self.parent.children.append(self)
 
     def accumulator_for(self, element):
+        # If the element is the focus of the selector or contains the
+        # focus, we fork the accumulator. Any values set downstream
+        # will be accumulated in that child, but all children will
+        # share what gets accumulated in this accumulator. This stands
+        # in contrast with Immediate, which does not need to fork
+        # because it gets activated immediately with all the current
+        # captures.
         return self.fork(pattern=element) if element.focus else self
 
     def log(self, element, varname, category, value):
@@ -248,15 +383,37 @@ class Total(BaseAccumulator):
             return rval
 
     def close(self):
+        # We only close the accumulator from the root
         if self.parent is None:
             leaves = self.leaves()
             for leaf in leaves or [self]:
+                # Each leaf is a separate set of captures
                 args = leaf.build()
                 if set(args) == leaf.names:
+                    # We only call the function if all of the names that should
+                    # have been captured are there. Otherwise we may get some
+                    # incomplete captures where e.g. the focus variable is
+                    # missing because it was never set in that leaf.
                     leaf._close(args)
 
 
 class Immediate(BaseAccumulator):
+    """Accumulator triggered when the focus variable is set.
+
+    The Immediate accumulator only keeps the last value of each variable in the
+    selector.
+
+    Any function given to the constructor must take one argument which is the
+    dictionary of captures.
+
+    Arguments:
+        pattern: The selector to use.
+        trigger: The function to call when the focus variable is set.
+        intercept: The function to call to override the value of the
+            focus variable.
+        close: The function to call when the selector is closed.
+    """
+
     def __init__(self, pattern, trigger=None, **kwargs):
         super().__init__(pattern=pattern, trigger=trigger, **kwargs)
 
@@ -267,6 +424,18 @@ class Immediate(BaseAccumulator):
 
 
 def interact(sym, key, category, value):
+    """Interaction function called when setting a variable in a tooled function.
+
+    Arguments:
+        sym: The variable's name.
+        key: The attribute or index set on the variable (as a Key object)
+        category: The variable's category or tag (annotation)
+        value: The value given to the variable in the original code.
+
+    Returns:
+        The value to actually set the variable to.
+    """
+
     if key is not None:
         sym = key.affix_to(sym)
 
