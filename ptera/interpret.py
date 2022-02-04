@@ -209,7 +209,7 @@ class BaseAccumulator:
     dictionary of captures.
 
     Arguments:
-        pattern: The selector to use.
+        selector: The selector to use.
         trigger: The function to call when the focus variable is set.
         intercept: The function to call to override the value of the
             focus variable.
@@ -224,7 +224,7 @@ class BaseAccumulator:
     def __init__(
         self,
         *,
-        pattern,
+        selector,
         intercept=None,
         trigger=None,
         close=None,
@@ -232,9 +232,9 @@ class BaseAccumulator:
         template=True,
         check=True,
     ):
-        pattern = select(pattern)
+        selector = select(selector)
 
-        self.pattern = pattern
+        self.selector = selector
         self.parent = parent
         self.template = template
 
@@ -255,22 +255,22 @@ class BaseAccumulator:
 
     def __check(self, fn, check):
         def new_fn(results):
-            if self.pattern.check_captures(results):
+            if self.selector.check_captures(results):
                 return fn(results)
             else:
                 return ABSENT
 
-        return new_fn if (fn and check and self.pattern.hasval) else fn
+        return new_fn if (fn and check and self.selector.hasval) else fn
 
-    def fork(self, pattern=None):
-        """Fork the Accumulator, possibly with a new pattern.
+    def fork(self, selector=None):
+        """Fork the Accumulator, possibly with a new selector.
 
         Children Accumulators can accumulate new data while sharing what is
         accumulated by their parents.
         """
         parent = None if self.template else self
         return type(self)(
-            pattern=pattern or self.pattern,
+            selector=selector or self.selector,
             intercept=self._intercept,
             trigger=self._trigger,
             close=self._close,
@@ -341,19 +341,19 @@ class Total(BaseAccumulator):
     dictionary of captures.
 
     Arguments:
-        pattern: The selector to use.
+        selector: The selector to use.
         close: The function to call when the selector is closed.
         trigger: The function to call when the focus variable is set.
         intercept: The function to call to override the value of the
             focus variable.
     """
 
-    def __init__(self, pattern, close, trigger=None, **kwargs):
+    def __init__(self, selector, close, trigger=None, **kwargs):
         super().__init__(
-            pattern=pattern, trigger=trigger, close=close, **kwargs
+            selector=selector, trigger=trigger, close=close, **kwargs
         )
         if self.parent is None:
-            self.names = self.pattern.all_captures
+            self.names = self.selector.all_captures
         else:
             self.names = self.parent.names
             self.parent.children.append(self)
@@ -366,7 +366,7 @@ class Total(BaseAccumulator):
         # in contrast with Immediate, which does not need to fork
         # because it gets activated immediately with all the current
         # captures.
-        return self.fork(pattern=element) if element.focus else self
+        return self.fork(selector=element) if element.focus else self
 
     def log(self, element, varname, category, value):
         cap = self.getcap(element)
@@ -374,7 +374,7 @@ class Total(BaseAccumulator):
         return self
 
     def leaves(self):
-        if isinstance(self.pattern, Element):
+        if isinstance(self.selector, Element):
             return [self]
         else:
             rval = []
@@ -407,15 +407,15 @@ class Immediate(BaseAccumulator):
     dictionary of captures.
 
     Arguments:
-        pattern: The selector to use.
+        selector: The selector to use.
         trigger: The function to call when the focus variable is set.
         intercept: The function to call to override the value of the
             focus variable.
         close: The function to call when the selector is closed.
     """
 
-    def __init__(self, pattern, trigger=None, **kwargs):
-        super().__init__(pattern=pattern, trigger=trigger, **kwargs)
+    def __init__(self, selector, trigger=None, **kwargs):
+        super().__init__(selector=selector, trigger=trigger, **kwargs)
 
     def log(self, element, varname, category, value):
         cap = self.getcap(element)
@@ -423,11 +423,11 @@ class Immediate(BaseAccumulator):
         return self
 
 
-def interact(sym, key, category, value):
+def interact(varname, key, category, value):
     """Interaction function called when setting a variable in a tooled function.
 
     Arguments:
-        sym: The variable's name.
+        varname: The variable's name.
         key: The attribute or index set on the variable (as a Key object)
         category: The variable's category or tag (annotation)
         value: The value given to the variable in the original code.
@@ -437,18 +437,18 @@ def interact(sym, key, category, value):
     """
 
     if key is not None:
-        sym = key.affix_to(sym)
+        varname = key.affix_to(varname)
 
     fr = Frame.top.get()
 
-    with fr.work_on(sym, key, category) as wfr:
+    with fr.work_on(varname, key, category) as wfr:
 
         fr_value = wfr.intercept(value)
         if fr_value is not ABSENT:
             value = fr_value
 
         if value is ABSENT:
-            raise PteraNameError(sym, fr.fn)
+            raise PteraNameError(varname, fr.fn)
 
         wfr.log(value)
         wfr.trigger()

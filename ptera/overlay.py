@@ -12,17 +12,17 @@ from .utils import autocreate, redirect
 _pattern_fit_cache = {}
 
 
-def fits_pattern(pfn, pattern):
+def fits_selector(pfn, selector):
     fname = pfn.origin
     fcat = pfn.fn.__annotations__.get("return", None)
     fvars = pfn.info
 
-    if not check_element(pattern.element, fname, fcat):
+    if not check_element(selector.element, fname, fcat):
         return False
 
     capmap = {}
 
-    for cap in pattern.captures:
+    for cap in selector.captures:
         if cap.name is None:
             varnames = [
                 var
@@ -58,7 +58,7 @@ class PatternCollection:
             cachekey = (fn, pattern)
             capmap = _pattern_fit_cache.get(cachekey)
             if capmap is None:
-                capmap = fits_pattern(fn, pattern)
+                capmap = fits_selector(fn, pattern)
                 _pattern_fit_cache[cachekey] = capmap
             if capmap is not False:
                 is_template = acc.template
@@ -96,7 +96,7 @@ class proceed:
 
 class BaseOverlay:
     def __init__(self, *handlers):
-        self.handlers = [(h.pattern, h) for h in handlers]
+        self.handlers = [(h.selector, h) for h in handlers]
 
     def __enter__(self):
         if self.handlers:
@@ -119,7 +119,7 @@ class Overlay:
     def fork(self):
         return type(self)(rules=self.rules)
 
-    def register(self, query, fn, full=False, all=False, immediate=True):
+    def register(self, selector, fn, full=False, all=False, immediate=True):
         def mapper(args):
             if all:
                 args = {key: cap.values for key, cap in args.items()}
@@ -128,18 +128,18 @@ class Overlay:
             return fn(args)
 
         ruleclass = Immediate if immediate else Total
-        self.rules.append(ruleclass(query, mapper))
+        self.rules.append(ruleclass(selector, mapper))
 
-    def on(self, query, **kwargs):
+    def on(self, selector, **kwargs):
         def deco(fn):
-            self.register(query, fn, **kwargs)
+            self.register(selector, fn, **kwargs)
             return fn
 
         return deco
 
-    def tap(self, query, dest=None, **kwargs):
+    def tap(self, selector, dest=None, **kwargs):
         dest = [] if dest is None else dest
-        self.register(query, dest.append, **kwargs)
+        self.register(selector, dest.append, **kwargs)
         return dest
 
     def tweak(self, values):
@@ -181,9 +181,9 @@ class Overlay:
 
     @autocreate
     @contextmanager
-    def tapping(self, query, dest=None, **kwargs):
+    def tapping(self, selector, dest=None, **kwargs):
         ol = self.fork()
-        dest = ol.tap(query, dest=dest, **kwargs)
+        dest = ol.tap(selector, dest=dest, **kwargs)
         with ol:
             yield dest
 
