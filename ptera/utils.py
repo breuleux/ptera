@@ -59,6 +59,16 @@ class autocreate:
         return self.fn.__get__(obj, objtype)
 
 
+class cached_property:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __get__(self, obj, cls):
+        val = self.fn(obj)
+        setattr(obj, self.fn.__name__, val)
+        return val
+
+
 _c = count()
 _redirector = """
 def {}(*args, **kwargs):

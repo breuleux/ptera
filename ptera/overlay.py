@@ -53,38 +53,73 @@ def fits_selector(pfn, selector):
     return capmap
 
 
-class SelectorCollection:
-    current = ContextVar("SelectorCollection.current", default=None)
+class HandlerCollection:
+    """List of (selector, accumulator) pairs.
 
-    def __init__(self, selectors=None):
-        self.selectors = list(selectors or [])
+    The selector in the pair may not be the same as accumulator.selector.
+    When processing a selector such as ``f > g > x``, after entering ``f``,
+    we may map the ``g > x`` selector to the same accumulator in a new
+    collection that represents what should be done inside ``f``.
+    """
+
+    current = ContextVar("HandlerCollection.current", default=None)
+
+    def __init__(self, handler_pairs=None):
+        self.handler_pairs = list(handler_pairs or [])
+
+    def plus(self, handler_pairs):
+        """Clone this collection with additional (selector, accumulator) pairs."""
+        return type(self)(self.handler_pairs + handler_pairs)
 
     def proceed(self, fn):
+        """Proceed into a call to fn with this collection.
+
+        Considers each selector to see if it matches fn. Returns a Frame
+        object for the call and a new HandlerCollection with the selectors
+        to use inside the call.
+        """
+        # This is key functionality which can be a bit obscure to fully
+        # understand, so I am commenting it heavily.
         frame = Frame(fn)
         next_selectors = []
-        to_process = deque(self.selectors)
-        while to_process:
-            selector, acc = to_process.pop()
+        for selector, acc in self.handler_pairs:
             if not selector.immediate:
+                # Immediate selectors must match directly inside the last
+                # call, but non-immediate selectors may match in a nested
+                # call, so we keep them around. Also note that the selector
+                # ``f > x`` will also match when ``f > f > x`` does, so
+                # we can't remove it even if it matches ``f``, we have to
+                # keep it around unconditionally.
                 next_selectors.append((selector, acc))
             cachekey = (fn, selector)
             capmap = _selector_fit_cache.get(cachekey)
             if capmap is None:
+                # Check if the selector matches this fn call
                 capmap = fits_selector(fn, selector)
                 _selector_fit_cache[cachekey] = capmap
             if capmap is not False:
+                # A "template" is just the original accumulator created by
+                # the user. We will fork it immediately so that we do not
+                # directly use it (a fork never has the template flag).
                 is_template = acc.template
                 if selector.focus or is_template:
+                    # Each focused variable may fire a separate event with
+                    # distinct captures. We fork the current accumulator to
+                    # share the current captures with all children, while
+                    # keeping captures in the focused children separate.
                     acc = acc.fork()
+                # Register the accumulators in the current frame. The
+                # "template" flag serves another purpose here, which is
+                # to indicate that this is the outermost call. If it is
+                # the outermost call, we can call the close method when
+                # it ends, because we are sure to be all done.
                 frame.register(acc, capmap, close_at_exit=is_template)
-                for child in selector.children:
-                    # if child.collapse:
-                    #     # This feature is related to the >> operator which
-                    #     # has been removed.
-                    #     to_process.append((child, acc))
-                    # else:
-                    next_selectors.append((child, acc))
-        rval = SelectorCollection(next_selectors)
+                # Now that we have entered the outer frame, the children
+                # elements of the current selector can be triggered
+                next_selectors.extend(
+                    (child, acc) for child in selector.children
+                )
+        rval = HandlerCollection(next_selectors)
         return frame, rval
 
 
@@ -92,7 +127,7 @@ class proceed:
     """Context manager to wrap execution of a function.
 
     This pushes a new :class:`~ptera.interpret.Frame` on top and proceeds
-    using the current :class:`~ptera.overlay.SelectorCollection`.
+    using the current :class:`~ptera.overlay.HandlerCollection`.
 
     Arguments:
         fn: The function that will be executed.
@@ -102,50 +137,71 @@ class proceed:
         self.fn = fn
 
     def __enter__(self):
-        self.curr = SelectorCollection.current.get() or SelectorCollection([])
+        self.curr = HandlerCollection.current.get() or HandlerCollection([])
         self.frame, new = self.curr.proceed(self.fn)
         self.frame_reset = Frame.top.set(self.frame)
-        self.reset = SelectorCollection.current.set(new)
+        self.reset = HandlerCollection.current.set(new)
         return new
 
     def __exit__(self, typ, exc, tb):
-        if self.curr is not None:
-            SelectorCollection.current.reset(self.reset)
+        HandlerCollection.current.reset(self.reset)
         Frame.top.reset(self.frame_reset)
         self.frame.exit()
 
 
 class BaseOverlay:
-    def __init__(self, *handlers):
-        self.handlers = [(h.selector, h) for h in handlers]
-
-    def __enter__(self):
-        if self.handlers:
-            collection = SelectorCollection(self.handlers)
-            curr = SelectorCollection.current.get()
-            if curr is not None:
-                collection.selectors = curr.selectors + collection.selectors
-            self.reset = SelectorCollection.current.set(collection)
-            return collection
-
-    def __exit__(self, typ, exc, tb):
-        if self.handlers:
-            SelectorCollection.current.reset(self.reset)
-
-
-class Overlay:
     """An Overlay contains a set of selectors and associated rules.
 
     When used as a context manager, the rules are applied within the with
     block.
+
+    Arguments:
+        handlers: A collection of handlers, each typically an
+            instance of either :class:`~ptera.interpret.Immediate` or
+            :class:`~ptera.interpret.Total`.
     """
 
-    def __init__(self, rules=()):
-        self.rules = list(rules)
+    def __init__(self, *handlers):
+        self.handlers = list(handlers)
 
     def fork(self):
-        """Create a clone of this Overlay."""
-        return type(self)(rules=self.rules)
+        """Create a clone of this overlay."""
+        return type(self)(*self.handlers)
+
+    def add(self, *handlers):
+        """Add new handlers."""
+        self.handlers.extend(handlers)
+
+    def __enter__(self):
+        if self.handlers:
+            handlers = [(h.selector, h) for h in self.handlers]
+            curr = HandlerCollection.current.get()
+            if curr is None:
+                collection = HandlerCollection(handlers)
+            else:
+                collection = curr.plus(handlers)
+            self.reset = HandlerCollection.current.set(collection)
+            return collection
+
+    def __exit__(self, typ, exc, tb):
+        if self.handlers:
+            HandlerCollection.current.reset(self.reset)
+
+
+class Overlay(BaseOverlay):
+    """An Overlay contains a set of selectors and associated rules.
+
+    When used as a context manager, the rules are applied within the with
+    block.
+
+    Rules can be given in the constructor or built using helper methods
+    such as ``on``, ``tapping`` or ``tweaking``.
+
+    Arguments:
+        handlers: A collection of handlers, each typically an
+            instance of either :class:`~ptera.interpret.Immediate` or
+            :class:`~ptera.interpret.Total`.
+    """
 
     def register(self, selector, fn, full=False, all=False, immediate=True):
         """Register a function to trigger on a selector.
@@ -157,8 +213,8 @@ class Overlay:
             all: (default False) If not full, whether to return a list of
                 results for each variable or a single value.
             immediate: (default True) Whether to use an
-                :func:`~ptera.interpret.Immediate` accumulator.
-                If False, use a :func:`~ptera.interpret.Total` accumulator.
+                :class:`~ptera.interpret.Immediate` accumulator.
+                If False, use a :class:`~ptera.interpret.Total` accumulator.
         """
 
         def mapper(args):
@@ -169,7 +225,7 @@ class Overlay:
             return fn(args)
 
         ruleclass = Immediate if immediate else Total
-        self.rules.append(ruleclass(selector, mapper))
+        self.add(ruleclass(selector, mapper))
 
     def on(self, selector, **kwargs):
         """Make a decorator for a function to trigger on a selector.
@@ -210,8 +266,8 @@ class Overlay:
         Arguments:
             values: A ``{selector: value}`` dictionary.
         """
-        self.rules.extend(
-            [
+        self.add(
+            *[
                 Immediate(sel, intercept=(lambda _, _v=v: _v))
                 for sel, v in values.items()
             ]
@@ -234,8 +290,8 @@ class Overlay:
 
             return newfn
 
-        self.rules.extend(
-            [
+        self.add(
+            *[
                 Immediate(sel, intercept=_wrapfn(v, full=full))
                 for sel, v in rewriters.items()
             ]
@@ -271,15 +327,6 @@ class Overlay:
         dest = ol.tap(selector, dest=dest, **kwargs)
         with ol:
             yield dest
-
-    def __enter__(self):
-        rulesets = [*self.rules]
-        self._ol = BaseOverlay(*rulesets)
-        self._ol.__enter__()
-        return self
-
-    def __exit__(self, typ, exc, tb):
-        self._ol.__exit__(None, None, None)
 
 
 class PteraFunction:

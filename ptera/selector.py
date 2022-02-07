@@ -10,32 +10,23 @@ from itertools import count
 
 from . import opparse
 from .tags import Tag, match_tag, tag as tag_factory
-from .utils import ABSENT
+from .utils import ABSENT, cached_property
 
 _valid_hashvars = ("#enter", "#value", "#yield")
 
 
 class SelectorError(Exception):
-    pass
+    """Error raised for invalid selectors."""
 
 
 def check_element(el, name, category):
+    """Check if Element el matches the given name and category."""
     if el.name is not None and el.name != name:
         return False
     elif not match_tag(el.category, category):
         return False
     else:
         return True
-
-
-class cached_property:
-    def __init__(self, fn):
-        self.fn = fn
-
-    def __get__(self, obj, cls):
-        val = self.fn(obj)
-        setattr(obj, self.fn.__name__, val)
-        return val
 
 
 class InternedMC(type):
