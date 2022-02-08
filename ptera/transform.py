@@ -232,7 +232,9 @@ class PteraTransformer(NodeTransformer):
             for arg in args
         ]
         return ast.Call(
-            func=self._get("interact"),
+            func=ast.Attribute(
+                value=self._get("frame"), attr="interact", ctx=ast.Load()
+            ),
             args=args,
             keywords=[],
         )
@@ -288,9 +290,7 @@ class PteraTransformer(NodeTransformer):
         if value_args is None:
             new_value = value
         else:
-            new_value = ast.Call(
-                func=self._get("interact"), args=value_args, keywords=[]
-            )
+            new_value = self._interact(*value_args)
         if expression:
             return ast.NamedExpr(
                 target=target,
@@ -586,12 +586,11 @@ class _Conformer:
     tooling on the new version. Might not work perfectly reliably.
     """
 
-    __slots__ = ("code", "ptera_fn", "interact", "proceed")
+    __slots__ = ("code", "ptera_fn", "proceed")
 
-    def __init__(self, fn, ptera_fn, interact, proceed):
+    def __init__(self, fn, ptera_fn, proceed):
         self.ptera_fn = ptera_fn
         self.code = fn.__code__
-        self.interact = interact
         self.proceed = proceed
 
     def __conform__(self, new):
@@ -604,7 +603,7 @@ class _Conformer:
         new_fn = new
         new_code = new.__code__
 
-        result = transform(new_fn, self.interact, self.proceed)
+        result = transform(new_fn, self.proceed)
         ptera_fn = self.ptera_fn.__globals__[self.ptera_fn.__ptera_token__]
         ptera_fn.__code__ = result.__code__
         ptera_fn.__ptera_token__ = result.__ptera_token__
@@ -630,15 +629,35 @@ def _default_proceed(fn):
     yield
 
 
-def transform(fn, interact, proceed=_default_proceed):
+def transform(fn, proceed=_default_proceed):
     """Return an instrumented version of fn.
+
+    The transform roughly works as follows.
+
+    .. code-block:: python
+
+        def f(x: int):
+            y = x * x
+            return y + 1
+
+    Becomes:
+
+    .. code-block:: python
+
+        def f(x: int):
+            with proceed(f) as FR:
+                FR.interact("#enter", None, None, True)
+                x = FR.interact("x", None, int, x)
+                y = FR.interact("y", None, None, x * x)
+                VALUE = FR.interact("#value", None, None, y + 1)
+                return VALUE
 
     Arguments:
         fn: The function to instrument.
-        interact: The function to call each time the value of an instrumented
-          variable is changed. It receives the arguments
+        proceed: A context manager that will wrap the function body
+          and which should have an ``interact`` method. Whenever a variable
+          is changed, the ``interact`` method receives the arguments
           ``(symbol, key, category, value)``
-          (see :func:`~ptera.interact.interact`)
 
     Returns:
         A new function that is an instrumented version of the old one.
@@ -674,7 +693,6 @@ def transform(fn, interact, proceed=_default_proceed):
     fnsym = _gensym()
     glb = fn.__globals__
     lib = {
-        "interact": (f"__ptera_{id(interact)}", interact),
         "proceed": (f"__ptera_{id(proceed)}", proceed),
         "globals": ("__ptera_globals", _Resolver(glb, __builtins__)),
         "ABSENT": ("__ptera_ABSENT", ABSENT),
@@ -746,7 +764,7 @@ def transform(fn, interact, proceed=_default_proceed):
         for k in all_vars
     }
 
-    actual_fn._conformer = _Conformer(fn, actual_fn, interact, proceed)
+    actual_fn._conformer = _Conformer(fn, actual_fn, proceed)
     actual_fn.__ptera_info__ = info
     actual_fn.__ptera_token__ = fnsym
     return actual_fn

@@ -3,7 +3,7 @@ import types
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-from .interpret import Frame, Immediate, Total, interact
+from .interpret import Immediate, Interactor, Total
 from .selector import check_element, select, verify
 from .transform import transform
 from .utils import autocreate, keyword_decorator
@@ -73,13 +73,13 @@ class HandlerCollection:
     def proceed(self, fn):
         """Proceed into a call to fn with this collection.
 
-        Considers each selector to see if it matches fn. Returns a Frame
+        Considers each selector to see if it matches fn. Returns an Interactor
         object for the call and a new HandlerCollection with the selectors
         to use inside the call.
         """
         # This is key functionality which can be a bit obscure to fully
         # understand, so I am commenting it heavily.
-        frame = Frame(fn)
+        itor = Interactor(fn)
         next_selectors = []
         for selector, acc in self.handler_pairs:
             if not selector.immediate:
@@ -107,29 +107,32 @@ class HandlerCollection:
                     # share the current captures with all children, while
                     # keeping captures in the focused children separate.
                     acc = acc.fork()
-                # Register the accumulators in the current frame. The
+                # Register the accumulators in the current interactor. The
                 # "template" flag serves another purpose here, which is
                 # to indicate that this is the outermost call. If it is
                 # the outermost call, we can call the close method when
                 # it ends, because we are sure to be all done.
-                frame.register(acc, capmap, close_at_exit=is_template)
-                # Now that we have entered the outer frame, the children
+                itor.register(acc, capmap, close_at_exit=is_template)
+                # Now that we have entered the outer interactor, the children
                 # elements of the current selector can be triggered
                 next_selectors.extend(
                     (child, acc) for child in selector.children
                 )
         rval = HandlerCollection(next_selectors)
-        return frame, rval
+        return itor, rval
 
 
 class proceed:
     """Context manager to wrap execution of a function.
 
-    This pushes a new :class:`~ptera.interpret.Frame` on top and proceeds
-    using the current :class:`~ptera.overlay.HandlerCollection`.
+    This uses the current :class:`~ptera.overlay.HandlerCollection` to
+    proceed through the current selectors.
 
     Arguments:
         fn: The function that will be executed.
+
+    Yields:
+        An Interactor that will be used by Ptera.
     """
 
     def __init__(self, fn):
@@ -137,15 +140,13 @@ class proceed:
 
     def __enter__(self):
         self.curr = HandlerCollection.current.get() or HandlerCollection([])
-        self.frame, new = self.curr.proceed(self.fn)
-        self.frame_reset = Frame.top.set(self.frame)
+        self.interactor, new = self.curr.proceed(self.fn)
         self.reset = HandlerCollection.current.set(new)
-        return new
+        return self.interactor
 
     def __exit__(self, typ, exc, tb):
         HandlerCollection.current.reset(self.reset)
-        Frame.top.reset(self.frame_reset)
-        self.frame.exit()
+        self.interactor.exit()
 
 
 class BaseOverlay:
@@ -332,7 +333,7 @@ class Overlay(BaseOverlay):
 def tooled(fn, inplace=False):
     if is_tooled(fn):
         return fn
-    new_fn = transform(fn, interact=interact, proceed=proceed)
+    new_fn = transform(fn, proceed=proceed)
     if inplace:
         try:
             from codefind import code_registry

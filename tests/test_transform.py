@@ -71,14 +71,26 @@ def wrap(fn, all=False):
     results = Interactions()
     overrides = {}
 
-    def interact(sym, key, category, value):
-        results.append((sym, key, category, value))
-        rval = overrides.get(sym, value)
-        if rval is ABSENT:
-            raise name_error(sym, wrapped)
-        return rval
+    class SimpleInteractor:
+        def __init__(self, fn):
+            self.fn = fn
+            self.results = results
+            self.overrides = overrides
 
-    new_fn = transform(fn, interact)
+        def interact(self, sym, key, category, value):
+            self.results.append((sym, key, category, value))
+            rval = self.overrides.get(sym, value)
+            if rval is ABSENT:
+                raise name_error(sym, self.fn)
+            return rval
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+    new_fn = transform(fn, proceed=SimpleInteractor)
 
     @functools.wraps(fn)
     def wrapped(*args, **ovrd):
@@ -108,7 +120,7 @@ def iceberg(
     return sum([x, y, z])
 
 
-_iceberg_line = 98
+_iceberg_line = iceberg.__wrapped__.__code__.co_firstlineno
 
 
 @wrap

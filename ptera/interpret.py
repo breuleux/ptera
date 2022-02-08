@@ -7,22 +7,18 @@ selector's outer function finishes.
 """
 
 from collections import defaultdict
-from contextvars import ContextVar
 
 from .selector import Element, check_element, select
 from .transform import PteraNameError
 from .utils import ABSENT
 
 
-class Frame:
-    """Represents an execution frame for a tooled function.
+class Interactor:
+    """Represents an interactor for a tooled function.
 
-    Class attribute:
-        top: A context variable containing the top frame. Use
-            ``Frame.top.get()`` to get it.
+    Define an ``interact`` method called by the tooled function
+    when variables are changed.
     """
-
-    top = ContextVar("Frame.top", default=None)
 
     def __init__(self, fn, accumulators=None):
         self.fn = fn
@@ -38,7 +34,7 @@ class Frame:
                 variable names for which the accumulator will be
                 triggered.
             close_at_exit: Whether to call the accumulator's close
-                function when the frame exits.
+                function when the interactor exits.
         """
         for element, varnames in captures.items():
             for v in varnames:
@@ -57,8 +53,37 @@ class Frame:
         """
         return WorkingFrame(varname, key, category, self.accumulators)
 
+    def interact(self, varname, key, category, value):
+        """Interaction function called when setting a variable in a tooled function.
+
+        Arguments:
+            varname: The variable's name.
+            key: The attribute or index set on the variable (as a Key object)
+            category: The variable's category or tag (annotation)
+            value: The value given to the variable in the original code.
+
+        Returns:
+            The value to actually set the variable to.
+        """
+        if key is not None:
+            varname = key.affix_to(varname)
+
+        with self.work_on(varname, key, category) as wfr:
+
+            fr_value = wfr.intercept(value)
+            if fr_value is not ABSENT:
+                value = fr_value
+
+            if value is ABSENT:
+                raise PteraNameError(varname, self.fn)
+
+            wfr.log(value)
+            wfr.trigger()
+
+        return value
+
     def exit(self):
-        """Exit the frame.
+        """Exit the interactor.
 
         This triggers the close function on available accumulators.
         """
@@ -421,36 +446,3 @@ class Immediate(BaseAccumulator):
         cap = self.getcap(element)
         cap.set(varname, value)
         return self
-
-
-def interact(varname, key, category, value):
-    """Interaction function called when setting a variable in a tooled function.
-
-    Arguments:
-        varname: The variable's name.
-        key: The attribute or index set on the variable (as a Key object)
-        category: The variable's category or tag (annotation)
-        value: The value given to the variable in the original code.
-
-    Returns:
-        The value to actually set the variable to.
-    """
-
-    if key is not None:
-        varname = key.affix_to(varname)
-
-    fr = Frame.top.get()
-
-    with fr.work_on(varname, key, category) as wfr:
-
-        fr_value = wfr.intercept(value)
-        if fr_value is not ABSENT:
-            value = fr_value
-
-        if value is ABSENT:
-            raise PteraNameError(varname, fr.fn)
-
-        wfr.log(value)
-        wfr.trigger()
-
-    return value
