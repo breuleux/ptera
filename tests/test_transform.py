@@ -86,13 +86,12 @@ def wrap(fn, all=False):
         overrides.clear()
         overrides.update(ovrd)
         rval = new_fn(*args)
-        interact("#value", None, None, rval)
         if all:
             return results
         else:
             return rval
 
-    wrapped.info = info
+    wrapped.__ptera_info__ = wrapped.info = info
     return wrapped
 
 
@@ -109,7 +108,7 @@ def iceberg(
     return sum([x, y, z])
 
 
-_iceberg_line = 99
+_iceberg_line = 98
 
 
 @wrap
@@ -145,6 +144,7 @@ def test_interact():
     data = iceberg(7, 3, z=5)
     assert data.ret == 15
     assert data == [
+        ("#enter", None, None, True),
         ("x", None, float, 7),
         ("y", None, None, 3),
         ("int", None, None, int),
@@ -335,7 +335,7 @@ def test_nested_no_crash():
 
     data = limbo([[0, 1], 2])
     assert data.ret == [[0, 2], 2]
-    assert data.syms() == ["x", "#value"]
+    assert data.syms() == ["#enter", "x", "#value"]
 
 
 def test_empty_return():

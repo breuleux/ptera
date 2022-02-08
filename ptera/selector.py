@@ -292,7 +292,7 @@ class Call(Selector):
         problems = []
 
         func = self.element.name
-        info = getattr(func, "info", None)
+        info = getattr(func, "__ptera_info__", None)
 
         if func is None:
             problems.append("Wildcard function is not allowed")
@@ -556,7 +556,7 @@ def dict_resolver(env):
                 fn
                 for fn in codefind.get_functions(co)
                 if inspect.isfunction(fn)
-                and not fn.__name__.endswith("__ptera_redirect")
+                and not hasattr(fn, "__ptera_discard__")
             ]
             if not funcs:  # pragma: no cover
                 raise Exception(f"Reference `{x}` cannot be resolved.")

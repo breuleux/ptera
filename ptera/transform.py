@@ -6,6 +6,7 @@ import re
 import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
+from contextlib import contextmanager
 from copy import deepcopy
 from itertools import count
 from textwrap import dedent
@@ -73,7 +74,7 @@ class PteraNameError(NameError):
 
     def info(self):
         """Return information about the missing variable."""
-        return self.function.info[self.varname]
+        return self.function.__ptera_info__[self.varname]
 
 
 def name_error(varname, function, pop_frames=1):
@@ -187,7 +188,7 @@ class PteraTransformer(NodeTransformer):
     after instantiation of the PteraTransformer.
     """
 
-    def __init__(self, tree, comments, prefix):
+    def __init__(self, tree, comments, lib):
         super().__init__()
         evc = ExternalVariableCollector(comments, tree)
         self.vardoc = evc.vardoc
@@ -200,7 +201,7 @@ class PteraTransformer(NodeTransformer):
         self.annotated = {}
         self.linenos = {}
         self.defaults = {}
-        self.prefix = prefix
+        self.lib = lib
         self.result = self.visit_FunctionDef(tree, root=True)
 
     def _ann(self, ann):
@@ -218,6 +219,23 @@ class PteraTransformer(NodeTransformer):
     def _absent(self):
         """Create a Name that represents the lack of a value."""
         return ast.Name(id="__ptera_ABSENT", ctx=ast.Load())
+
+    def _get(self, name):
+        return ast.Name(id=self.lib[name][0], ctx=ast.Load())
+
+    def _set(self, name):
+        return ast.Name(id=self.lib[name][0], ctx=ast.Store())
+
+    def _interact(self, *args):
+        args = [
+            arg if isinstance(arg, ast.AST) else ast.Constant(arg)
+            for arg in args
+        ]
+        return ast.Call(
+            func=self._get("interact"),
+            args=args,
+            keywords=[],
+        )
 
     def _wrap_call(self, sym, *args):
         args = [
@@ -271,9 +289,7 @@ class PteraTransformer(NodeTransformer):
             new_value = value
         else:
             new_value = ast.Call(
-                func=ast.Name(id=f"{self.prefix}_interact", ctx=ast.Load()),
-                args=value_args,
-                keywords=[],
+                func=self._get("interact"), args=value_args, keywords=[]
             )
         if expression:
             return ast.NamedExpr(
@@ -348,7 +364,11 @@ class PteraTransformer(NodeTransformer):
         if not root:
             return node
 
-        new_body = self.generate_interactions(node.args)
+        wrapped_body = []
+
+        new_body = [ast.Expr(self._interact("#enter", None, None, True))]
+
+        new_body += self.generate_interactions(node.args)
 
         for external in sorted(self.external):
             new_body.extend(
@@ -364,7 +384,8 @@ class PteraTransformer(NodeTransformer):
                 )
             )
 
-        first = node.body[0]
+        body = node.body
+        first = body[0]
         if isinstance(first, ast.Expr):
             v = first.value
             if (
@@ -372,15 +393,32 @@ class PteraTransformer(NodeTransformer):
                 or isinstance(v, ast.Constant)
                 and isinstance(v.value, str)
             ):
-                new_body.insert(0, first)
+                wrapped_body.append(first)
+                body = body[1:]
 
         new_body += self.visit_body(node.body)
+
+        wrapped_body.append(
+            ast.With(
+                items=[
+                    ast.withitem(
+                        context_expr=ast.Call(
+                            func=self._get("proceed"),
+                            args=[self._get("self")],
+                            keywords=[],
+                        ),
+                        optional_vars=self._set("frame"),
+                    ),
+                ],
+                body=new_body,
+            )
+        )
 
         return ast.copy_location(
             ast.FunctionDef(
                 name=node.name,
                 args=node.args,
-                body=new_body,
+                body=wrapped_body,
                 decorator_list=node.decorator_list,
                 returns=node.returns,
             ),
@@ -521,6 +559,15 @@ class PteraTransformer(NodeTransformer):
                 stmts.extend(self.generate_interactions(name_node))
         return stmts
 
+    def visit_Return(self, node):
+        new_value = self._interact(
+            "#value",
+            None,
+            None,
+            self.visit(node.value or ast.Constant(value=None)),
+        )
+        return ast.copy_location(ast.Return(value=new_value), node)
+
 
 class _Conformer:
     """Implements codefind's __conform__ protocol.
@@ -565,7 +612,12 @@ class _Resolver:
         return ABSENT
 
 
-def transform(fn, interact):
+@contextmanager
+def _default_proceed(fn):
+    yield
+
+
+def transform(fn, interact, proceed=_default_proceed):
     """Return an instrumented version of fn.
 
     Arguments:
@@ -604,10 +656,24 @@ def transform(fn, interact):
     tree = tree.body[0]
     assert isinstance(tree, ast.FunctionDef)
     tree.decorator_list = []
-    # We put the interact function in the variable {prefix}_interact
-    # so that it cannot clash with other interact functions
-    prefix = _gensym()
-    transformer = PteraTransformer(tree, comments, prefix)
+
+    fnsym = _gensym()
+    glb = fn.__globals__
+    lib = {
+        "interact": (f"__ptera_{id(interact)}", interact),
+        "proceed": (f"__ptera_{id(proceed)}", proceed),
+        "globals": ("__ptera_globals", _Resolver(glb, __builtins__)),
+        "ABSENT": ("__ptera_ABSENT", ABSENT),
+        "Key": ("__ptera_Key", Key),
+        "get_tags": ("__ptera_get_tags", get_tags),
+        "self": (fnsym, None),
+        "frame": ("__ptera_frame", None),
+    }
+    glb.update(
+        {name: value for name, value in lib.values() if value is not None}
+    )
+
+    transformer = PteraTransformer(tree, comments, lib)
     new_tree = transformer.result
     ast.fix_missing_locations(new_tree)
     _, lineno = inspect.getsourcelines(fn)
@@ -615,16 +681,6 @@ def transform(fn, interact):
     new_fn = compile(
         ast.Module(body=[new_tree], type_ignores=[]), filename, "exec"
     )
-
-    # We add a few extra variables in the existing namespace
-    glb = fn.__globals__
-    glb[f"{prefix}_interact"] = interact
-    # The other variables do not need the prefix because they are always
-    # the same for the same globals
-    glb["__ptera_globals"] = _Resolver(glb, __builtins__)
-    glb["__ptera_ABSENT"] = ABSENT
-    glb["__ptera_Key"] = Key
-    glb["__ptera_get_tags"] = get_tags
 
     fname = fn.__name__
     save = glb.get(fname, None)
@@ -640,6 +696,7 @@ def transform(fn, interact):
 
     # Get the new function (populated with exec)
     actual_fn = glb[fname]
+    glb[fnsym] = actual_fn
 
     # However, we don't want to change the existing mapping of fn
     glb[fname] = save
@@ -676,4 +733,6 @@ def transform(fn, interact):
     }
 
     actual_fn._conformer = _Conformer(fn, actual_fn, interact)
+    actual_fn.__ptera_info__ = info
+    actual_fn.__ptera_token__ = fnsym
     return actual_fn, info

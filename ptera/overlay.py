@@ -1,13 +1,12 @@
 import functools
 import inspect
-from collections import deque
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 from .interpret import Frame, Immediate, Total, interact
 from .selector import check_element, select, verify
 from .transform import transform
-from .utils import autocreate, redirect
+from .utils import autocreate
 
 # Cache whether functions match selectors
 _selector_fit_cache = {}
@@ -21,9 +20,9 @@ def fits_selector(pfn, selector):
         selector: The selector. We are trying to match the
             outer scope.
     """
-    fname = pfn.origin
-    fcat = pfn.fn.__annotations__.get("return", None)
-    fvars = pfn.info
+    fname = pfn
+    fcat = pfn.__annotations__.get("return", None)
+    fvars = pfn.__ptera_info__
 
     if not check_element(selector.element, fname, fcat):
         return False
@@ -379,13 +378,24 @@ class PteraDecorator:
             self.inplace = PteraDecorator(inplace=True)
 
     def __call__(self, fn):
-        if isinstance(fn, PteraFunction) or hasattr(fn, "__ptera__"):
+        if hasattr(fn, "__ptera_info__"):
             return fn
-        new_fn, state = transform(fn, interact=interact)
-        new_fn = PteraFunction(new_fn, state)
+        new_fn, state = transform(fn, interact=interact, proceed=proceed)
         if self._inplace:
-            redirect(fn, new_fn)
-            fn.__ptera__ = new_fn
+            try:
+                from codefind import code_registry
+
+                code_registry.update_cache_entry(
+                    fn, fn.__code__, new_fn.__code__
+                )
+                fn._conformer = new_fn._conformer
+            except ImportError:  # pragma: no cover
+                pass
+            fn.__code__ = new_fn.__code__
+            fn.__ptera_info__ = new_fn.__ptera_info__
+            fn.__ptera_token__ = new_fn.__ptera_token__
+            new_fn.__ptera_discard__ = True
+            fn.__globals__[fn.__ptera_token__] = fn
             return fn
         else:
             return new_fn
