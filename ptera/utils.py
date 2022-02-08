@@ -1,3 +1,5 @@
+"""Miscellaneous utilities."""
+
 import functools
 
 
@@ -59,6 +61,8 @@ class autocreate:
 
 
 class cached_property:
+    """Property that caches its value when we get it for the first time."""
+
     def __init__(self, fn):
         self.fn = fn
 

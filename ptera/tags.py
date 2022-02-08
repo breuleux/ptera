@@ -1,3 +1,12 @@
+"""Tag system for variables.
+
+Variables can be tagged as e.g. ``x: ptera.tag.Important`` and the
+selectors ``x:Important`` or ``*:Important`` would match it.
+Alternatively, Ptera recognizes ``x: "@Important"`` as referring
+to these tags.
+"""
+
+
 def _merge(a, b):
     members = set()
     members.update(a.members if isinstance(a, TagSet) else {a})
@@ -6,6 +15,12 @@ def _merge(a, b):
 
 
 class Tag:
+    """Tag for a variable, to be used as an annotation.
+
+    Arguments:
+        name: The name of the tag.
+    """
+
     def __init__(self, name):
         self.name = name
 
@@ -19,6 +34,8 @@ class Tag:
 
 
 class TagSet:
+    """Set of multiple tags."""
+
     def __init__(self, members):
         self.members = frozenset(members)
 
@@ -45,6 +62,11 @@ class _TagFactory:
 
 
 def match_tag(to_match, tg):
+    """Return whether two Tags or TagSets match.
+
+    Only tg can be a TagSet.
+    """
+
     if to_match is None:
         return True
     if tg is None:
@@ -56,6 +78,7 @@ def match_tag(to_match, tg):
 
 
 def get_tags(*tags):
+    """Build a Tag or TagSet from strings."""
     tags = [getattr(tag, tg) if isinstance(tg, str) else tg for tg in tags]
     if len(tags) == 1:
         return tags[0]

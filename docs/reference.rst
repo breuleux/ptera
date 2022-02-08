@@ -12,4 +12,6 @@ Reference
    ref-overlay.rst
    ref-probe.rst
    ref-selector.rst
+   ref-tags.rst
    ref-transform.rst
+   ref-utils.rst
