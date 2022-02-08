@@ -1,4 +1,5 @@
 import functools
+import types
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -329,7 +330,7 @@ class Overlay(BaseOverlay):
 
 @keyword_decorator
 def tooled(fn, inplace=False):
-    if hasattr(fn, "__ptera_info__"):
+    if is_tooled(fn):
         return fn
     new_fn = transform(fn, interact=interact, proceed=proceed)
     if inplace:
@@ -351,6 +352,11 @@ def tooled(fn, inplace=False):
 
 
 tooled.inplace = tooled(inplace=True)
+
+
+def is_tooled(fn):
+    """Return whether a function has been tooled with Ptera."""
+    return isinstance(fn, types.FunctionType) and hasattr(fn, "__ptera_info__")
 
 
 def autotool(selector):
