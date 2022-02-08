@@ -695,6 +695,10 @@ def transform(fn, proceed, to_instrument=True):
           ``(symbol, key, category, value)``. See
           :class:`~ptera.overlay.proceed` and
           :class:`~ptera.interpret.Interactor`.
+        to_instrument: List of :class:`~ptera.selector.Element`
+          representing the variables to instrument, or True. If
+          True (or if one Element is a generic), all variables
+          are instrumented.
 
     Returns:
         A new function that is an instrumented version of the old one.

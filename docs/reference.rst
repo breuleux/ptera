@@ -8,6 +8,7 @@ Reference
    ref-api.rst
    ref-operators.rst
    ref-interpret.rst
+   ref-opparse.rst
    ref-overlay.rst
    ref-probe.rst
    ref-selector.rst
