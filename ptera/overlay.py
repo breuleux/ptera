@@ -331,6 +331,12 @@ class Overlay(BaseOverlay):
 
 @keyword_decorator
 def tooled(fn, inplace=False):
+    """Tool a function so that it can report changes in its variables to Ptera.
+
+    Arguments:
+        fn: The function to tool.
+        inplace: Whether to change the function inplace.
+    """
     if is_tooled(fn):
         return fn
     new_fn = transform(fn, proceed=proceed)
@@ -356,7 +362,7 @@ tooled.inplace = tooled(inplace=True)
 
 
 def is_tooled(fn):
-    """Return whether a function has been tooled with Ptera."""
+    """Return whether a function has been tooled for Ptera."""
     return isinstance(fn, types.FunctionType) and hasattr(fn, "__ptera_info__")
 
 

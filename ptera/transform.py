@@ -655,13 +655,17 @@ def transform(fn, proceed=_default_proceed):
     Arguments:
         fn: The function to instrument.
         proceed: A context manager that will wrap the function body
-          and which should have an ``interact`` method. Whenever a variable
+          and which should yield some object that has an ``interact``
+          method. Whenever a variable
           is changed, the ``interact`` method receives the arguments
-          ``(symbol, key, category, value)``
+          ``(symbol, key, category, value)``. See
+          :class:`~ptera.overlay.proceed` and
+          :class:`~ptera.interpret.Interactor`.
 
     Returns:
         A new function that is an instrumented version of the old one.
         The function has the following properties set:
+
         * ``__ptera_info__``: An info dictionary about all variables used
           in the function, their provenance, annotations and comments.
         * ``__ptera_token__``: The name of the global variable in which
