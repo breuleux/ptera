@@ -16,13 +16,24 @@ def _identity(x):
 class Probe(SourceProxy):
     """Observable which generates a stream of values from program variables.
 
-    Probes should be created with `ptera.probing` or `ptera.global_probe`.
+    Probes should be created with
+    :func:`~ptera.probe.probing` or :func:`~ptera.probe.global_probe`.
+
+    .. note::
+        In the documentation for some methods you may see calls to ``give()``
+        or ``given()``, but that's because they come from the documentation
+        for the ``giving`` package (on top of which Probe is built).
+
+        ``give()`` is equivalent to what Ptera does when a
+        variable of interest is set, ``given()`` yields an object that has
+        the same interface as ``Probe`` (the superclass to ``Probe``, in
+        fact). Take variables named ``gv`` to be probes.
 
     Arguments:
         selectors: The selector strings describing the variables to probe (at least one).
-        raw: Defaults to False. If True, produce a stream of Capture objects that
+        raw: Defaults to False. If True, produce a stream of :class:`~ptera.interpret.Capture` objects that
             contain extra information about the capture. Mostly relevant for
-            advanced selectors such as "f > $x:@Parameter" which captures the value
+            advanced selectors such as ``f > $x:@Parameter`` which captures the value
             of any variable with the Parameter tag under the generic name "x".
             When raw is True, the actual name of the variable is preserved in a
             Capture object associated to x.
@@ -191,7 +202,7 @@ def probing(*selectors, raw=False):
 
     Arguments:
         selectors: The selector strings describing the variables to probe (at least one).
-        raw: Defaults to False. If True, produce a stream of Capture objects that
+        raw: Defaults to False. If True, produce a stream of :class:`~ptera.interpret.Capture` objects that
             contain extra information about the capture.
     """
     return Probe(*selectors, raw=raw)
@@ -212,7 +223,7 @@ def global_probe(*selectors, raw=False):
 
     Arguments:
         selectors: The selector strings describing the variables to probe (at least one).
-        raw: Defaults to False. If True, produce a stream of Capture objects that
+        raw: Defaults to False. If True, produce a stream of :class:`~ptera.interpret.Capture` objects that
             contain extra information about the capture.
     """
     prb = Probe(*selectors, raw=raw)

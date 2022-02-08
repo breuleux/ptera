@@ -43,6 +43,8 @@ class InternedMC(type):
 
 
 class Selector(metaclass=InternedMC):
+    """Represents a selector for variables in a call stack."""
+
     def check_captures(self, captures):
         for v in self.all_values:
             if v.capture in captures:
@@ -289,6 +291,14 @@ class Call(Selector):
         return f"{name}{caps}"
 
     def problems(self):
+        """Return a list of problems with this selector.
+
+        * Wildcards are not allowed for cuntions.
+        * All functions should be tooled.
+        * All captured variables should exist in their respective functions.
+        * For wildcard variables that specify a tag/category, at least one
+          variable should match.
+        """
         problems = []
 
         func = self.element.name
@@ -335,6 +345,7 @@ class Call(Selector):
         return problems
 
 
+# Parser for selectors
 parser = opparse.Parser(
     lexer=opparse.Lexer(
         {
@@ -377,6 +388,8 @@ def _guarantee_call(parent, context, resolve=True):
 
 
 class Evaluator:
+    """Evaluator that transforms the parse tree into a Selector."""
+
     def __init__(self):
         self.actions = {}
 
@@ -788,6 +801,17 @@ def select(s, env=None, skip_modules=[], skip_frames=0, strict=False):
 
 
 def verify(selector, display=None):
+    """Verify that the selector is resolvable.
+
+    This raises an exception if :func:`~ptera.selector.Call.problems`
+    returns any problems.
+
+    * Wildcards are not allowed for cuntions.
+    * All functions should be tooled.
+    * All captured variables should exist in their respective functions.
+    * For wildcard variables that specify a tag/category, at least one
+      variable should match.
+    """
     display = display or selector
     problems = selector.problems()
     if problems:

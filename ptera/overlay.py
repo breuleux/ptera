@@ -333,12 +333,15 @@ class Overlay(BaseOverlay):
 def tooled(fn, inplace=False):
     """Tool a function so that it can report changes in its variables to Ptera.
 
+    ``@tooled`` can be used as a decorator.
+
+    You may write ``@tooled(inplace=True)`` or ``@tooled.inplace`` as decorators
+    to tool a function inplace.
+
     Arguments:
         fn: The function to tool.
         inplace: Whether to change the function inplace.
     """
-    if is_tooled(fn):
-        return fn
     new_fn = transform(fn, proceed=proceed)
     if inplace:
         try:
