@@ -1,12 +1,11 @@
 import functools
-import inspect
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 from .interpret import Frame, Immediate, Total, interact
 from .selector import check_element, select, verify
 from .transform import transform
-from .utils import autocreate
+from .utils import autocreate, keyword_decorator
 
 # Cache whether functions match selectors
 _selector_fit_cache = {}
@@ -328,80 +327,30 @@ class Overlay(BaseOverlay):
             yield dest
 
 
-class PteraFunction:
-    def __init__(self, fn, info, origin=None, partial_args=()):
-        self.fn = fn
-        self.__doc__ = fn.__doc__
-        self.info = info
-        self.isgenerator = inspect.isgeneratorfunction(self.fn)
-        self.origin = origin or self
-        self.partial_args = partial_args
+@keyword_decorator
+def tooled(fn, inplace=False):
+    if hasattr(fn, "__ptera_info__"):
+        return fn
+    new_fn = transform(fn, interact=interact, proceed=proceed)
+    if inplace:
+        try:
+            from codefind import code_registry
 
-    def __get__(self, obj, typ):
-        if obj is None:
-            return self
-        else:
-            return type(self)(
-                fn=self.fn,
-                info=self.info,
-                origin=self.origin,
-                partial_args=self.partial_args + (obj,),
-            )
-
-    def _generator_call(self, *args, **kwargs):
-        with proceed(self):
-            interact("#enter", None, None, True)
-            for entry in self.fn(*self.partial_args, *args, **kwargs):
-                interact("#yield", None, None, entry)
-                yield entry
-
-    def __call__(self, *args, **kwargs):
-        if self.isgenerator:
-            return self._generator_call(*args, **kwargs)
-
-        with proceed(self):
-            interact("#enter", None, None, True)
-            rval = self.fn(*self.partial_args, *args, **kwargs)
-            rval = interact("#value", None, None, rval)
-            return rval
-
-    def __str__(self):
-        return f"{self.fn.__name__}"
+            code_registry.update_cache_entry(fn, fn.__code__, new_fn.__code__)
+            fn._conformer = new_fn._conformer
+        except ImportError:  # pragma: no cover
+            pass
+        fn.__code__ = new_fn.__code__
+        fn.__ptera_info__ = new_fn.__ptera_info__
+        fn.__ptera_token__ = new_fn.__ptera_token__
+        new_fn.__ptera_discard__ = True
+        fn.__globals__[fn.__ptera_token__] = fn
+        return fn
+    else:
+        return new_fn
 
 
-class PteraDecorator:
-    def __init__(self, inplace=False):
-        self._inplace = inplace
-        if inplace:
-            self.inplace = self
-        else:
-            self.inplace = PteraDecorator(inplace=True)
-
-    def __call__(self, fn):
-        if hasattr(fn, "__ptera_info__"):
-            return fn
-        new_fn, state = transform(fn, interact=interact, proceed=proceed)
-        if self._inplace:
-            try:
-                from codefind import code_registry
-
-                code_registry.update_cache_entry(
-                    fn, fn.__code__, new_fn.__code__
-                )
-                fn._conformer = new_fn._conformer
-            except ImportError:  # pragma: no cover
-                pass
-            fn.__code__ = new_fn.__code__
-            fn.__ptera_info__ = new_fn.__ptera_info__
-            fn.__ptera_token__ = new_fn.__ptera_token__
-            new_fn.__ptera_discard__ = True
-            fn.__globals__[fn.__ptera_token__] = fn
-            return fn
-        else:
-            return new_fn
-
-
-tooled = PteraDecorator()
+tooled.inplace = tooled(inplace=True)
 
 
 def autotool(selector):
@@ -411,15 +360,7 @@ def autotool(selector):
         selector: The selector to use as a basis for the tooling. Any
             function it refers to will be tooled.
     """
-
-    def _wrap(fn):
-        tooled.inplace(fn)
-        if hasattr(fn, "__ptera__"):
-            return fn.__ptera__
-        else:
-            return fn
-
     rval = select(selector)
-    rval = rval.wrap_functions(_wrap)
+    rval = rval.wrap_functions(tooled.inplace)
     verify(rval)
     return rval

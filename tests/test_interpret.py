@@ -621,7 +621,7 @@ def test_conform():
 
     with Overlay.tweaking({"factor": 3}):
         assert broccoli(10) == 31
-        conformer = broccoli.__ptera__.fn._conformer
+        conformer = broccoli._conformer
         conform(conformer.code, cauliflower)
         conform(conformer.code, cauliflower.__code__)
         assert broccoli(10) == 32

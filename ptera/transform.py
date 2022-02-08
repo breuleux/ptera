@@ -568,6 +568,15 @@ class PteraTransformer(NodeTransformer):
         )
         return ast.copy_location(ast.Return(value=new_value), node)
 
+    def visit_Yield(self, node):
+        new_value = self._interact(
+            "#yield",
+            None,
+            None,
+            self.visit(node.value or ast.Constant(value=None)),
+        )
+        return ast.copy_location(ast.Yield(value=new_value), node)
+
 
 class _Conformer:
     """Implements codefind's __conform__ protocol.
@@ -577,12 +586,13 @@ class _Conformer:
     tooling on the new version. Might not work perfectly reliably.
     """
 
-    __slots__ = ("code", "ptera_fn", "interact")
+    __slots__ = ("code", "ptera_fn", "interact", "proceed")
 
-    def __init__(self, fn, ptera_fn, interact):
+    def __init__(self, fn, ptera_fn, interact, proceed):
         self.ptera_fn = ptera_fn
         self.code = fn.__code__
         self.interact = interact
+        self.proceed = proceed
 
     def __conform__(self, new):
         from codefind import code_registry
@@ -594,8 +604,11 @@ class _Conformer:
         new_fn = new
         new_code = new.__code__
 
-        result, _ = transform(new_fn, self.interact)
-        self.ptera_fn.__code__ = result.__code__
+        result = transform(new_fn, self.interact, self.proceed)
+        ptera_fn = self.ptera_fn.__globals__[self.ptera_fn.__ptera_token__]
+        ptera_fn.__code__ = result.__code__
+        ptera_fn.__ptera_token__ = result.__ptera_token__
+        ptera_fn.__ptera_info__ = result.__ptera_info__
 
         code_registry.update_cache_entry(self, self.code, new_code)
         self.code = new_code
@@ -628,11 +641,12 @@ def transform(fn, interact, proceed=_default_proceed):
           (see :func:`~ptera.interact.interact`)
 
     Returns:
-        A (newfn, info) tuple.
-
-        * newfn: A new function that is an instrumented version of the old one.
-        * info: A dictionary mapping each instrumented variable to information
-          about whether it is local or global, and comments about the variable.
+        A new function that is an instrumented version of the old one.
+        The function has the following properties set:
+        * ``__ptera_info__``: An info dictionary about all variables used
+          in the function, their provenance, annotations and comments.
+        * ``__ptera_token__``: The name of the global variable in which
+          the function is tucked so that it can refer to itself.
     """
 
     src = dedent(inspect.getsource(fn))
@@ -732,7 +746,7 @@ def transform(fn, interact, proceed=_default_proceed):
         for k in all_vars
     }
 
-    actual_fn._conformer = _Conformer(fn, actual_fn, interact)
+    actual_fn._conformer = _Conformer(fn, actual_fn, interact, proceed)
     actual_fn.__ptera_info__ = info
     actual_fn.__ptera_token__ = fnsym
-    return actual_fn, info
+    return actual_fn

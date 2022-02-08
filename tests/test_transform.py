@@ -78,7 +78,7 @@ def wrap(fn, all=False):
             raise name_error(sym, wrapped)
         return rval
 
-    new_fn, info = transform(fn, interact)
+    new_fn = transform(fn, interact)
 
     @functools.wraps(fn)
     def wrapped(*args, **ovrd):
@@ -91,7 +91,7 @@ def wrap(fn, all=False):
         else:
             return rval
 
-    wrapped.__ptera_info__ = wrapped.info = info
+    wrapped.__ptera_info__ = wrapped.info = new_fn.__ptera_info__
     return wrapped
 
 

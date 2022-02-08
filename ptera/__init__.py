@@ -1,13 +1,7 @@
 from giving import operators as op
 
 from .interpret import Immediate, Total, interact
-from .overlay import (
-    BaseOverlay,
-    Overlay,
-    PteraDecorator,
-    PteraFunction,
-    tooled,
-)
+from .overlay import BaseOverlay, Overlay, tooled
 from .probe import Probe, global_probe, probing
 from .selector import SelectorError, select
 from .tags import Tag, TagSet, match_tag, tag
