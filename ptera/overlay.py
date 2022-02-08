@@ -342,6 +342,8 @@ def tooled(fn, inplace=False):
         fn: The function to tool.
         inplace: Whether to change the function inplace.
     """
+    if is_tooled(fn):
+        return fn
     new_fn = transform(fn, proceed=proceed)
     if inplace:
         try:

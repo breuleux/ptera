@@ -6,16 +6,17 @@ import re
 import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
-from contextlib import contextmanager
 from copy import deepcopy
 from itertools import count
 from textwrap import dedent
 from types import TracebackType
 
+from .selector import Element, check_element
 from .tags import get_tags
 from .utils import ABSENT
 
 _IDX = count()
+_GENERIC = Element(name=None)
 
 
 class Key:
@@ -188,7 +189,7 @@ class PteraTransformer(NodeTransformer):
     after instantiation of the PteraTransformer.
     """
 
-    def __init__(self, tree, comments, lib):
+    def __init__(self, tree, comments, lib, filename, glb, to_instrument):
         super().__init__()
         evc = ExternalVariableCollector(comments, tree)
         self.vardoc = evc.vardoc
@@ -199,26 +200,60 @@ class PteraTransformer(NodeTransformer):
         for ext in self.external:
             self.provenance[ext] = "external"
         self.annotated = {}
+        self.evalcache = {}
         self.linenos = {}
         self.defaults = {}
         self.lib = lib
+        self.filename = filename
+        self.globals = glb
+        self.to_instrument = to_instrument
         self.result = self.visit_FunctionDef(tree, root=True)
+
+    def should_instrument(self, varname, ann):
+        evaluated_ann = self._evaluate(ann)
+        if any(
+            check_element(el, varname, evaluated_ann)
+            for el in self.to_instrument
+        ):
+            return True
+        return False
 
     def _ann(self, ann):
         if isinstance(ann, ast.Str) and ann.s.startswith("@"):
             tags = re.split(r" *& *", ann.s)
-            ann = ast.Call(
-                func=ast.Name(id="__ptera_get_tags", ctx=ast.Load()),
-                args=[
-                    ast.Str(s=tag[1:]) for tag in tags if tag.startswith("@")
-                ],
-                keywords=[],
+            ann = ast.copy_location(
+                ast.Call(
+                    self._get("get_tags"),
+                    args=[
+                        ast.Str(s=tag[1:])
+                        for tag in tags
+                        if tag.startswith("@")
+                    ],
+                    keywords=[],
+                ),
+                ann,
             )
+            ast.fix_missing_locations(ann)
+
         return ann
 
-    def _absent(self):
-        """Create a Name that represents the lack of a value."""
-        return ast.Name(id="__ptera_ABSENT", ctx=ast.Load())
+    def _evaluate(self, node):
+        if node in self.evalcache:
+            return self.evalcache[node]
+        try:
+            result = eval(
+                compile(
+                    ast.Expression(node),
+                    self.filename,
+                    "eval",
+                ),
+                self.globals,
+                self.globals,
+            )
+        except Exception:
+            result = ABSENT
+        self.evalcache[node] = result
+        return result
 
     def _get(self, name):
         return ast.Name(id=self.lib[name][0], ctx=ast.Load())
@@ -227,6 +262,10 @@ class PteraTransformer(NodeTransformer):
         return ast.Name(id=self.lib[name][0], ctx=ast.Store())
 
     def _interact(self, *args):
+        varname, key, ann, value = args
+        if not self.should_instrument(varname, ann):
+            return value if isinstance(value, ast.AST) else ast.Constant(value)
+
         args = [
             arg if isinstance(arg, ast.AST) else ast.Constant(arg)
             for arg in args
@@ -253,13 +292,13 @@ class PteraTransformer(NodeTransformer):
     def make_interaction(self, target, ann, value, orig=None, expression=False):
         """Create code for setting the value of a variable."""
         if ann and isinstance(target, ast.Name):
-            self.annotated[target.id] = ann
+            self.annotated[target.id] = self._evaluate(ann)
             self.linenos[target.id] = target.lineno
         ann_arg = ann if ann else ast.Constant(value=None)
-        value_arg = self._absent() if value is None else value
+        value_arg = self._get("ABSENT") if value is None else value
         if isinstance(target, ast.Name):
             value_args = [
-                ast.Constant(value=target.id),
+                target.id,
                 ast.Constant(value=None),
                 ann_arg,
                 value_arg,
@@ -270,7 +309,7 @@ class PteraTransformer(NodeTransformer):
             slc = target.slice
             slc = slc.value if isinstance(target.slice, ast.Index) else slc
             value_args = [
-                ast.Constant(value=target.value.id),
+                target.value.id,
                 self._wrap_call("__ptera_Key", "index", deepcopy(slc)),
                 ann_arg,
                 value_arg,
@@ -279,7 +318,7 @@ class PteraTransformer(NodeTransformer):
             target.value, ast.Name
         ):
             value_args = [
-                ast.Constant(value=target.value.id),
+                target.value.id,
                 self._wrap_call("__ptera_Key", "attr", target.attr),
                 ann_arg,
                 value_arg,
@@ -624,12 +663,7 @@ class _Resolver:
         return ABSENT
 
 
-@contextmanager
-def _default_proceed(fn):
-    yield
-
-
-def transform(fn, proceed=_default_proceed):
+def transform(fn, proceed, to_instrument=True):
     """Return an instrumented version of fn.
 
     The transform roughly works as follows.
@@ -671,6 +705,8 @@ def transform(fn, proceed=_default_proceed):
         * ``__ptera_token__``: The name of the global variable in which
           the function is tucked so that it can refer to itself.
     """
+    if to_instrument is True:
+        to_instrument = [_GENERIC]
 
     src = dedent(inspect.getsource(fn))
 
@@ -709,7 +745,14 @@ def transform(fn, proceed=_default_proceed):
         {name: value for name, value in lib.values() if value is not None}
     )
 
-    transformer = PteraTransformer(tree, comments, lib)
+    transformer = PteraTransformer(
+        tree=tree,
+        comments=comments,
+        lib=lib,
+        filename=filename,
+        glb=glb,
+        to_instrument=to_instrument,
+    )
     new_tree = transformer.result
     ast.fix_missing_locations(new_tree)
     _, lineno = inspect.getsourcelines(fn)
@@ -742,19 +785,7 @@ def transform(fn, proceed=_default_proceed):
     info = {
         k: {
             "name": k,
-            "annotation": (
-                eval(
-                    compile(
-                        ast.Expression(transformer.annotated[k]),
-                        filename,
-                        "eval",
-                    ),
-                    glb,
-                    glb,
-                )
-                if k in transformer.annotated
-                else ABSENT
-            ),
+            "annotation": transformer.annotated.get(k, ABSENT),
             "provenance": transformer.provenance.get(k),
             "doc": transformer.vardoc.get(k),
             "location": (

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ptera.selector import SelectorError, select
+from ptera.selector import Element, SelectorError, select
 from ptera.transform import Key, name_error, transform
 from ptera.utils import ABSENT, keyword_decorator
 
@@ -67,7 +67,7 @@ def test_Interactions():
 
 
 @keyword_decorator
-def wrap(fn, all=False):
+def wrap(fn, all=False, names=True):
     results = Interactions()
     overrides = {}
 
@@ -90,7 +90,13 @@ def wrap(fn, all=False):
         def __exit__(self, exc_type, exc, tb):
             pass
 
-    new_fn = transform(fn, proceed=SimpleInteractor)
+    new_fn = transform(
+        fn,
+        proceed=SimpleInteractor,
+        to_instrument=True
+        if names is True
+        else [Element(name=name) for name in names],
+    )
 
     @functools.wraps(fn)
     def wrapped(*args, **ovrd):
@@ -98,6 +104,7 @@ def wrap(fn, all=False):
         overrides.clear()
         overrides.update(ovrd)
         rval = new_fn(*args)
+        results.actual_ret = rval
         if all:
             return results
         else:
@@ -147,6 +154,15 @@ def wishful_thinking():
     return unicorn
 
 
+@wrap(all=True, names=["b", "d"])
+def only_some(a):
+    b = a + 1
+    c = b + 1
+    d = c + 1
+    e = d + 1
+    return e + 1
+
+
 #################
 # General tests #
 #################
@@ -163,6 +179,15 @@ def test_interact():
         ("sum", None, None, sum),
         ("z", None, int, ABSENT),
         ("#value", None, None, 15),
+    ]
+
+
+def test_interact_only_some():
+    data = only_some(10)
+    assert data.actual_ret == 15
+    assert data == [
+        ("b", None, None, 11),
+        ("d", None, None, 13),
     ]
 
 
