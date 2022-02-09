@@ -382,3 +382,12 @@ def autotool(selector):
     rval = rval.wrap_functions(tooled.inplace)
     verify(rval)
     return rval
+
+
+@contextmanager
+def no_overlay():
+    reset = HandlerCollection.current.set(None)
+    try:
+        yield
+    finally:
+        HandlerCollection.current.reset(reset)

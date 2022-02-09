@@ -6,6 +6,7 @@ import pytest
 
 from ptera import BaseOverlay, Overlay, tag, tooled
 from ptera.interpret import Capture, Immediate
+from ptera.overlay import no_overlay
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
 
@@ -597,6 +598,20 @@ def test_generator():
                 break
 
     assert results == [{"#yield": [i * 2]} for i in range(1, 7)]
+
+
+@tooled
+def coal(x):
+    y = 2
+    return x + y
+
+
+def test_no_overlay():
+    with Overlay.tweaking({"coal > y": 10}):
+        assert coal(5) == 15
+        with no_overlay():
+            assert coal(5) == 7
+        assert coal(5) == 15
 
 
 def broccoli(n):
