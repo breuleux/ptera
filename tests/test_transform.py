@@ -173,10 +173,10 @@ def test_interact():
     assert data.ret == 15
     assert data == [
         ("#enter", None, None, True),
-        ("x", None, float, 7),
-        ("y", None, None, 3),
         ("int", None, None, int),
         ("sum", None, None, sum),
+        ("x", None, float, 7),
+        ("y", None, None, 3),
         ("z", None, int, ABSENT),
         ("#value", None, None, 15),
     ]

@@ -407,8 +407,6 @@ class PteraTransformer(NodeTransformer):
 
         new_body = [ast.Expr(self._interact("#enter", None, None, True))]
 
-        new_body += self.generate_interactions(node.args)
-
         for external in sorted(self.external):
             new_body.extend(
                 self.make_interaction(
@@ -422,6 +420,8 @@ class PteraTransformer(NodeTransformer):
                     orig=node,
                 )
             )
+
+        new_body += self.generate_interactions(node.args)
 
         body = node.body
         first = body[0]

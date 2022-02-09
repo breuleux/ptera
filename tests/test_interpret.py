@@ -614,6 +614,15 @@ def test_no_overlay():
         assert coal(5) == 15
 
 
+def test_annotation_issues():
+    @tooled
+    def zoom(x: bool) -> bool:
+        # bool = globals()["__builtins__"]["bool"]
+        return not x
+
+    assert zoom(True) is False
+
+
 def broccoli(n):
     factor = 2
     a = n * factor
