@@ -137,12 +137,13 @@ class ExternalVariableCollector(NodeVisitor):
         funcnames: Set of function names defined in the body.
     """
 
-    def __init__(self, comments, tree):
+    def __init__(self, tree, comments, closure_vars):
         self.used = set()
         self.assigned = set()
+        self.free = set(closure_vars)
         self.comments = comments
         self.vardoc = {}
-        self.provenance = {}
+        self.provenance = {v: "closure" for v in closure_vars}
         self.funcnames = set()
         self.visit(tree)
         self.used -= self.funcnames
@@ -189,13 +190,13 @@ class PteraTransformer(NodeTransformer):
     after instantiation of the PteraTransformer.
     """
 
-    def __init__(self, tree, comments, lib, filename, glb, to_instrument):
+    def __init__(self, tree, evc, lib, filename, glb, to_instrument):
         super().__init__()
-        evc = ExternalVariableCollector(comments, tree)
         self.vardoc = evc.vardoc
         self.used = evc.used
         self.assigned = evc.assigned
-        self.external = evc.used - evc.assigned
+        self.free = evc.free
+        self.external = evc.used - evc.assigned - evc.free
         self.provenance = evc.provenance
         for ext in self.external:
             self.provenance[ext] = "external"
@@ -652,6 +653,31 @@ class _Conformer:
         self.code = new_code
 
 
+def _compile(filename, tree, freevars):
+    if freevars:
+        tree = ast.copy_location(
+            ast.FunctionDef(
+                name="#WRAP",
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[ast.arg(name) for name in freevars],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    kwarg=None,
+                    defaults=[],
+                ),
+                body=[tree, ast.Return(ast.Name(tree.name, ctx=ast.Load()))],
+                decorator_list=[],
+                returns=tree.returns,
+            ),
+            tree,
+        )
+        ast.fix_missing_locations(tree)
+
+    return compile(ast.Module(body=[tree], type_ignores=[]), filename, "exec")
+
+
 def transform(fn, proceed, to_instrument=True):
     """Return an instrumented version of fn.
 
@@ -743,7 +769,7 @@ def transform(fn, proceed, to_instrument=True):
 
     transformer = PteraTransformer(
         tree=tree,
-        comments=comments,
+        evc=ExternalVariableCollector(tree, comments, fn.__code__.co_freevars),
         lib=lib,
         filename=filename,
         glb=glb,
@@ -753,9 +779,8 @@ def transform(fn, proceed, to_instrument=True):
     ast.fix_missing_locations(new_tree)
     _, lineno = inspect.getsourcelines(fn)
     ast.increment_lineno(new_tree, lineno - 1)
-    new_fn = compile(
-        ast.Module(body=[new_tree], type_ignores=[]), filename, "exec"
-    )
+    freevars = fn.__code__.co_freevars
+    new_fn = _compile(filename, new_tree, freevars)
 
     fname = fn.__name__
     save = glb.get(fname, None)
@@ -770,7 +795,16 @@ def transform(fn, proceed, to_instrument=True):
         pass
 
     # Get the new function (populated with exec)
-    actual_fn = glb[fname]
+    if "#WRAP" in glb:
+        # If the function is a closure, we have created a function
+        # called #WRAP that takes the closure variables as arguments
+        # and returns the function that interests us.
+        actual_fn = glb.pop("#WRAP")(
+            *[cell.cell_contents for cell in fn.__closure__]
+        )
+    else:
+        actual_fn = glb[fname]
+
     glb[fnsym] = actual_fn
 
     # However, we don't want to change the existing mapping of fn
