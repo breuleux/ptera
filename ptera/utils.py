@@ -70,3 +70,27 @@ class cached_property:
         val = self.fn(obj)
         setattr(obj, self.fn.__name__, val)
         return val
+
+
+_MISSING = Named("MISSING")
+
+
+class DictPile:
+    def __init__(self, *dicts, default=_MISSING):
+        self.dicts = dicts
+        self.default = default
+
+    def __contains__(self, item):
+        for d in self.dicts:
+            if item in d:
+                return True
+        return False
+
+    def __getitem__(self, item):
+        for d in self.dicts:
+            if item in d:
+                return d[item]
+        if self.default is _MISSING:
+            raise KeyError(item)
+        else:
+            return self.default

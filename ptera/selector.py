@@ -1,7 +1,6 @@
 """Specifications for call paths."""
 
 
-import builtins
 import inspect
 import re
 import sys
@@ -10,7 +9,7 @@ from itertools import count
 
 from . import opparse
 from .tags import Tag, match_tag, tag as tag_factory
-from .utils import ABSENT, cached_property
+from .utils import ABSENT, DictPile, cached_property
 
 _valid_hashvars = ("#enter", "#value", "#yield")
 
@@ -584,8 +583,6 @@ def dict_resolver(env):
             start, *parts = x.split(".")
             if start in env:
                 curr = env[start]
-            elif hasattr(builtins, start):
-                return getattr(builtins, start)
             else:
                 raise SelectorError(f"Could not resolve '{start}'.")
 
@@ -614,7 +611,7 @@ class VSymbol(VNode):
             return int(x)
         elif re.fullmatch(r"'[^']*'", x):
             return x[1:-1]
-        elif isinstance(env, dict):
+        elif isinstance(env, (dict, DictPile)):
             return dict_resolver(env)(x)
         else:
             return env(x)
@@ -725,7 +722,7 @@ def _find_eval_env(s, fr, skip):
             return glb["__ptera_resolver__"]
         name = glb["__name__"]
         if all(not name.startswith(pfx) for pfx in skip):
-            return glb
+            return DictPile(fr.f_locals, glb, __builtins__)
         fr = fr.f_back
     raise AssertionError("Unreachable outside ptera.")  # pragma: no cover
 

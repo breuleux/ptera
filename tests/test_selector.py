@@ -299,3 +299,18 @@ def test_encode():
 
     assert str(sel.parse("a")) == 'sel("!a")'
     assert str(sel.parse("a > b")) == 'sel("a(!b)")'
+
+
+def test_local_resolve():
+    x = 3
+
+    def inside_scoop():
+        return x
+
+    selector = sel.select("inside_scoop > x")
+    assert selector.element.name is inside_scoop
+
+
+def test_bad_resolve():
+    with pytest.raises(sel.SelectorError):
+        sel.select("inside_scoop > x")

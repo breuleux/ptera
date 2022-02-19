@@ -13,7 +13,7 @@ from types import TracebackType
 
 from .selector import Element, check_element
 from .tags import get_tags
-from .utils import ABSENT
+from .utils import ABSENT, DictPile
 
 _IDX = count()
 _GENERIC = Element(name=None)
@@ -652,17 +652,6 @@ class _Conformer:
         self.code = new_code
 
 
-class _Resolver:
-    def __init__(self, *dicts):
-        self.dicts = dicts
-
-    def __getitem__(self, item):
-        for d in self.dicts:
-            if item in d:
-                return d[item]
-        return ABSENT
-
-
 def transform(fn, proceed, to_instrument=True):
     """Return an instrumented version of fn.
 
@@ -738,7 +727,10 @@ def transform(fn, proceed, to_instrument=True):
     glb = fn.__globals__
     lib = {
         "proceed": (f"__ptera_{id(proceed)}", proceed),
-        "globals": ("__ptera_globals", _Resolver(glb, __builtins__)),
+        "globals": (
+            "__ptera_globals",
+            DictPile(glb, __builtins__, default=ABSENT),
+        ),
         "ABSENT": ("__ptera_ABSENT", ABSENT),
         "Key": ("__ptera_Key", Key),
         "get_tags": ("__ptera_get_tags", get_tags),
