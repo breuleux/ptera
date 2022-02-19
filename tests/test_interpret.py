@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from ptera import BaseOverlay, Overlay, tag, tooled
-from ptera.interpret import Capture, Immediate
+from ptera.interpret import Capture, Immediate, OverrideException
 from ptera.overlay import no_overlay
 from ptera.selector import Element, parse
 from ptera.tools import every  # noqa
@@ -649,3 +649,22 @@ def test_conform():
         conform(conformer.code, cauliflower)
         conform(conformer.code, cauliflower.__code__)
         assert broccoli(10) == 32
+
+
+def test_closure():
+    x = 3
+    y = 7
+
+    @tooled
+    def inside_scoop():
+        return x + y
+
+    assert inside_scoop() == x + y
+
+    with tapping("inside_scoop > x") as xs:
+        inside_scoop()
+    assert xs == [{"x": 3}]
+
+    with pytest.raises(OverrideException):
+        with Overlay.tweaking({"inside_scoop > x": 8}):
+            assert inside_scoop() == 8 + y

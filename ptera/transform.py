@@ -263,7 +263,7 @@ class PteraTransformer(NodeTransformer):
         return ast.Name(id=self.lib[name][0], ctx=ast.Store())
 
     def _interact(self, *args):
-        varname, key, ann, value = args
+        varname, key, ann, value, overridable = args
         if not self.should_instrument(varname, ann):
             return value if isinstance(value, ast.AST) else ast.Constant(value)
 
@@ -303,6 +303,7 @@ class PteraTransformer(NodeTransformer):
                 ast.Constant(value=None),
                 ann_arg,
                 value_arg,
+                True,
             ]
         elif isinstance(target, ast.Subscript) and isinstance(
             target.value, ast.Name
@@ -314,6 +315,7 @@ class PteraTransformer(NodeTransformer):
                 self._wrap_call("__ptera_Key", "index", deepcopy(slc)),
                 ann_arg,
                 value_arg,
+                True,
             ]
         elif isinstance(target, ast.Attribute) and isinstance(
             target.value, ast.Name
@@ -323,6 +325,16 @@ class PteraTransformer(NodeTransformer):
                 self._wrap_call("__ptera_Key", "attr", target.attr),
                 ann_arg,
                 value_arg,
+                True,
+            ]
+        elif isinstance(target, str):
+            # Used for closures
+            value_args = [
+                target,
+                ast.Constant(value=None),
+                ann_arg,
+                value_arg,
+                False,
             ]
         else:
             value_args = None
@@ -331,7 +343,10 @@ class PteraTransformer(NodeTransformer):
             new_value = value
         else:
             new_value = self._interact(*value_args)
-        if expression:
+        if isinstance(target, str):
+            assert not expression
+            return [ast.Expr(new_value)]
+        elif expression:
             return ast.NamedExpr(
                 target=target,
                 value=new_value,
@@ -406,7 +421,7 @@ class PteraTransformer(NodeTransformer):
 
         wrapped_body = []
 
-        new_body = [ast.Expr(self._interact("#enter", None, None, True))]
+        new_body = [ast.Expr(self._interact("#enter", None, None, True, False))]
 
         for external in sorted(self.external):
             new_body.extend(
@@ -418,6 +433,16 @@ class PteraTransformer(NodeTransformer):
                         slice=ast.Constant(external),
                         ctx=ast.Load(),
                     ),
+                    orig=node,
+                )
+            )
+
+        for fv in sorted(self.free):
+            new_body.extend(
+                self.make_interaction(
+                    target=fv,
+                    ann=None,
+                    value=ast.Name(id=fv, ctx=ast.Load()),
                     orig=node,
                 )
             )
@@ -605,6 +630,7 @@ class PteraTransformer(NodeTransformer):
             None,
             None,
             self.visit(node.value or ast.Constant(value=None)),
+            True,
         )
         return ast.copy_location(ast.Return(value=new_value), node)
 
@@ -614,6 +640,7 @@ class PteraTransformer(NodeTransformer):
             None,
             None,
             self.visit(node.value or ast.Constant(value=None)),
+            True,
         )
         return ast.copy_location(ast.Yield(value=new_value), node)
 

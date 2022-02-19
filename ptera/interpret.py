@@ -13,6 +13,10 @@ from .transform import PteraNameError
 from .utils import ABSENT
 
 
+class OverrideException(Exception):
+    """Exception raised when trying to override a closure variable."""
+
+
 class Interactor:
     """Represents an interactor for a tooled function.
 
@@ -53,7 +57,7 @@ class Interactor:
         """
         return WorkingFrame(varname, key, category, self.accumulators)
 
-    def interact(self, varname, key, category, value):
+    def interact(self, varname, key, category, value, overridable):
         """Interaction function called when setting a variable in a tooled function.
 
         Arguments:
@@ -61,6 +65,7 @@ class Interactor:
             key: The attribute or index set on the variable (as a Key object)
             category: The variable's category or tag (annotation)
             value: The value given to the variable in the original code.
+            overridable: Whether the value can be overriden.
 
         Returns:
             The value to actually set the variable to.
@@ -72,6 +77,10 @@ class Interactor:
 
             fr_value = wfr.intercept(value)
             if fr_value is not ABSENT:
+                if not overridable:
+                    raise OverrideException(
+                        f"The value of '{varname}' cannot be overriden"
+                    )
                 value = fr_value
 
             if value is ABSENT:

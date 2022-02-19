@@ -12,7 +12,7 @@ from .common import one_test_per_assert
 
 
 def _format_sym(entry):
-    rval, key, typ, _ = entry
+    rval, key, typ, _, ovr = entry
     if key is not None:
         if key.type == "attr":
             rval += f".{key.value}"
@@ -35,12 +35,12 @@ class Interactions(list):
         return type(self)(_format_sym(x) for x in self)
 
     def vals_for(self, sym):
-        return type(self)(x[-1] for x in self if x[0] == sym)
+        return type(self)(x[-2] for x in self if x[0] == sym)
 
     @property
     def ret(self):
         assert self[-1][0] == "#value"
-        return self[-1][-1]
+        return self[-1][-2]
 
 
 def test_Interactions():
@@ -53,11 +53,11 @@ def test_Interactions():
 
     xs = Interactions(
         [
-            ("a", None, None, 6),
-            ("b", None, None, 48),
-            ("b", Key("attr", "wow"), None, 8),
-            ("a", None, None, 9),
-            ("c", None, None, -1),
+            ("a", None, None, 6, True),
+            ("b", None, None, 48, True),
+            ("b", Key("attr", "wow"), None, 8, True),
+            ("a", None, None, 9, True),
+            ("c", None, None, -1, True),
         ]
     )
     assert xs.syms() == ["a", "b", "b.wow", "a", "c"]
@@ -77,8 +77,8 @@ def wrap(fn, all=False, names=True):
             self.results = results
             self.overrides = overrides
 
-        def interact(self, sym, key, category, value):
-            self.results.append((sym, key, category, value))
+        def interact(self, sym, key, category, value, overridable):
+            self.results.append((sym, key, category, value, overridable))
             rval = self.overrides.get(sym, value)
             if rval is ABSENT:
                 raise name_error(sym, self.fn)
@@ -172,13 +172,13 @@ def test_interact():
     data = iceberg(7, 3, z=5)
     assert data.ret == 15
     assert data == [
-        ("#enter", None, None, True),
-        ("int", None, None, int),
-        ("sum", None, None, sum),
-        ("x", None, float, 7),
-        ("y", None, None, 3),
-        ("z", None, int, ABSENT),
-        ("#value", None, None, 15),
+        ("#enter", None, None, True, False),
+        ("int", None, None, int, True),
+        ("sum", None, None, sum, True),
+        ("x", None, float, 7, True),
+        ("y", None, None, 3, True),
+        ("z", None, int, ABSENT, True),
+        ("#value", None, None, 15, True),
     ]
 
 
@@ -186,8 +186,8 @@ def test_interact_only_some():
     data = only_some(10)
     assert data.actual_ret == 15
     assert data == [
-        ("b", None, None, 11),
-        ("d", None, None, 13),
+        ("b", None, None, 11, True),
+        ("d", None, None, 13, True),
     ]
 
 
@@ -464,6 +464,24 @@ def test_import_from_inside():
 
     assert imp(7)
     assert not imp(7, gt=lt_orig)
+
+
+def test_closure():
+    x = 3
+    y = 7
+
+    @wrap(all=True)
+    def inside_scoop():
+        return x + y
+
+    data = inside_scoop()
+    assert data.ret == 10
+    assert data == [
+        ("#enter", None, None, True, False),
+        ("x", None, None, 3, False),
+        ("y", None, None, 7, False),
+        ("#value", None, None, 10, True),
+    ]
 
 
 if sys.version_info >= (3, 8, 0):
