@@ -13,5 +13,5 @@ from .probe import Probe, global_probe, probing
 from .selector import SelectorError, select
 from .tags import Tag, TagSet, match_tag, tag
 from .transform import PteraNameError, transform
-from .utils import ABSENT
+from .utils import ABSENT, refstring
 from .version import version

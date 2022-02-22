@@ -94,3 +94,59 @@ class DictPile:
             raise KeyError(item)
         else:
             return self.default
+
+
+def _build_refstring(module, *path):
+    if module == "__main__":
+        module = ""
+
+    return f"/{module}/" + "/".join(path)
+
+
+class CodeNotFoundError(Exception):
+    pass
+
+
+def _extract_info(fn):
+    module = getattr(fn, "__module__", None)
+    qualname = getattr(fn, "__qualname__", None)
+    if module is not None and qualname is not None:
+        path = qualname.split(".")
+        path = [p for p in path if p != "<locals>"]
+        return (module, *path)
+    else:
+        return None
+
+
+def _verify_existence(module, *path):
+    import codefind
+
+    try:
+        # Verify that we find it
+        codefind.find_code(*path, module=module)
+        return True
+    except KeyError:
+        return False
+
+
+def refstring(fn):
+    """Return the canonical reference string to select fn.
+
+    For example, if fn is called ``bloop`` and is located in module
+    ``squid.game``, the refstring will be ``/squid.game/bloop``.
+    """
+    info = _extract_info(fn)
+    if info is None:
+        raise TypeError(f"Cannot make a refstring for {fn} of type {type(fn)}.")
+
+    module, *path = info
+    ref = _build_refstring(module, *path)
+
+    if not _verify_existence(module, *path):
+        raise CodeNotFoundError(
+            f"Cannot find the canonical code reference for {fn}"
+            f" (tried: '{ref}', but it did not work. Are the"
+            " __module__ and __qualname__ properties accurate?)"
+        )
+
+    return ref
