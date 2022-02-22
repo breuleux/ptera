@@ -90,7 +90,7 @@ class DictPile:
         for d in self.dicts:
             if item in d:
                 return d[item]
-        if self.default is _MISSING:
+        if self.default is _MISSING:  # pragma: no cover
             raise KeyError(item)
         else:
             return self.default

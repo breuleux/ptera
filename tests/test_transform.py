@@ -484,6 +484,33 @@ def test_closure():
     ]
 
 
+class Animal:
+    def __init__(self, cry):
+        self._cry = cry
+
+    @wrap(all=True)
+    def cry(self):
+        intensity = 2
+        return self._cry * intensity
+
+
+def test_transform_method():
+    cow = Animal("moo")
+    data = cow.cry()
+    assert data.ret == "moomoo"
+    assert data == [
+        ("#enter", None, None, True, False),
+        ("self", None, None, cow, True),
+        ("intensity", None, None, 2, True),
+        ("#value", None, None, "moomoo", True),
+    ]
+
+
+def test_transform_type_error():
+    with pytest.raises(TypeError, match="only works on functions"):
+        transform(Animal("meow").cry, lambda *args: args)
+
+
 if sys.version_info >= (3, 8, 0):
 
     def test_named_expression():

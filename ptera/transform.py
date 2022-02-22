@@ -751,6 +751,9 @@ def transform(fn, proceed, to_instrument=True):
         * ``__ptera_token__``: The name of the global variable in which
           the function is tucked so that it can refer to itself.
     """
+    if not isinstance(fn, types.FunctionType):
+        raise TypeError("transform() only works on functions")
+
     if to_instrument is True:
         to_instrument = [_GENERIC]
 

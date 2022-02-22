@@ -322,3 +322,47 @@ def test_overlay_in_probe():
 
     assert results == [{"a": [36]}]
     assert results2 == [{"a": 25}, {"a": 36}, {"a": 49}]
+
+
+class Animal:
+    def __init__(self, cry):
+        self._cry = cry
+
+    def cry(self):
+        intensity = 2
+        return self._cry * intensity
+
+    def crie(salf):
+        # It should work regardless of whether the self argument is
+        # called "self" or something else.
+        intensity = 3
+        return salf._cry * intensity
+
+
+def test_probe_instance():
+    cow = Animal("moo")
+    crow = Animal("caw")
+
+    with probing("cow.cry > intensity") as prb:
+        results = prb.accum()
+        assert cow.cry() == "moomoo"
+        assert crow.cry() == "cawcaw"
+
+    assert results == [
+        {
+            "self": cow,
+            "intensity": 2,
+        }
+    ]
+
+    with probing("crow.crie > intensity") as prb:
+        results = prb.accum()
+        assert cow.crie() == "moomoomoo"
+        assert crow.crie() == "cawcawcaw"
+
+    assert results == [
+        {
+            "salf": crow,
+            "intensity": 3,
+        }
+    ]

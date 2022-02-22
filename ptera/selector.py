@@ -4,6 +4,7 @@
 import inspect
 import re
 import sys
+import types
 from collections import defaultdict
 from itertools import count
 
@@ -735,9 +736,24 @@ class MatchFunction:
 def _resolve(selector, env, cnt):
     if isinstance(selector, Call):
         el = _resolve(selector.element, env, cnt)
+        captures = [_resolve(x, env, cnt) for x in selector.captures]
+        fn = el.name
+        if isinstance(fn, types.MethodType):
+            # If fn is a method, we add a capture for "self" that must
+            # match the instance.
+            real_fn = fn.__func__
+            selfname = inspect.getfullargspec(real_fn).args[0]
+            el = el.clone(name=real_fn)
+            captures.append(
+                Element(
+                    name=selfname,
+                    capture=selfname,
+                    value=fn.__self__,
+                )
+            )
         return selector.clone(
             element=el,
-            captures=tuple(_resolve(x, env, cnt) for x in selector.captures),
+            captures=tuple(captures),
             children=tuple(_resolve(x, env, cnt) for x in selector.children),
         )
     elif isinstance(selector, Element):
