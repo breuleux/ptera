@@ -7,6 +7,7 @@ import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
 from copy import deepcopy
+from functools import reduce
 from itertools import count
 from textwrap import dedent
 from types import TracebackType
@@ -374,13 +375,22 @@ class PteraTransformer(NodeTransformer):
 
     def generate_interactions(self, target):
         if isinstance(target, ast.arguments):
-            assert not target.vararg
-            assert not target.kwonlyargs
-            assert not target.kwarg
-            stmts = []
-            for arg in target.args:
-                stmts.extend(self.generate_interactions(arg))
-            return stmts
+            arglist = [
+                *target.posonlyargs,
+                *target.args,
+                *target.kwonlyargs,
+                target.vararg,
+                target.kwarg,
+            ]
+            return reduce(
+                list.__add__,
+                [
+                    self.generate_interactions(arg)
+                    for arg in arglist
+                    if arg is not None
+                ],
+                [],
+            )
 
         elif isinstance(target, ast.arg):
             return self.make_interaction(

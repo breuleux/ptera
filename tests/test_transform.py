@@ -100,10 +100,11 @@ def wrap(fn, all=False, names=True):
 
     @functools.wraps(fn)
     def wrapped(*args, **ovrd):
+        kw = ovrd.pop("KW", {})
         results.clear()
         overrides.clear()
         overrides.update(ovrd)
-        rval = new_fn(*args)
+        rval = new_fn(*args, **kw)
         results.actual_ret = rval
         if all:
             return results
@@ -509,6 +510,57 @@ def test_transform_method():
 def test_transform_type_error():
     with pytest.raises(TypeError, match="only works on functions"):
         transform(Animal("meow").cry, lambda *args: args)
+
+
+def test_varargs():
+    @wrap(all=True)
+    def nightmare(x, y, *z, **k):
+        return x + y + sum(z) + sum(k.values())
+
+    # Keyword arguments in wrap() override variables, to pass
+    # keyword arguments to nightmare we need to pass a special
+    # KW key.
+    data = nightmare(1, 2, 3, 4, KW=dict(a=5, b=6))
+    assert data.ret == 21
+    assert data == [
+        ("#enter", None, None, True, False),
+        ("sum", None, None, sum, True),
+        ("x", None, None, 1, True),
+        ("y", None, None, 2, True),
+        ("z", None, None, (3, 4), True),
+        ("k", None, None, {"a": 5, "b": 6}, True),
+        ("#value", None, None, 21, True),
+    ]
+
+
+def test_kwonly():
+    @wrap(all=True)
+    def waycool(x, *, y):
+        return x + y
+
+    data = waycool(21, KW=dict(y=32))
+    assert data.ret == 53
+    assert data == [
+        ("#enter", None, None, True, False),
+        ("x", None, None, 21, True),
+        ("y", None, None, 32, True),
+        ("#value", None, None, 53, True),
+    ]
+
+
+def test_positional():
+    @wrap(all=True)
+    def gnarly(x, /, y):
+        return x + y
+
+    data = gnarly(21, 32)
+    assert data.ret == 53
+    assert data == [
+        ("#enter", None, None, True, False),
+        ("x", None, None, 21, True),
+        ("y", None, None, 32, True),
+        ("#value", None, None, 53, True),
+    ]
 
 
 if sys.version_info >= (3, 8, 0):
