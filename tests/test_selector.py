@@ -311,6 +311,16 @@ def test_local_resolve():
     assert selector.element.name is inside_scoop
 
 
-def test_bad_resolve():
+def test_bad_local_resolve():
     with pytest.raises(sel.SelectorError):
         sel.select("inside_scoop > x")
+
+
+def test_bad_slash_selector():
+    with pytest.raises(sel.SelectorError):
+        sel.select("//a/b.c > x")
+
+
+def test_code_not_found():
+    with pytest.raises(sel.CodeNotFoundError):
+        sel.select("//what > x")

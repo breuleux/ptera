@@ -752,7 +752,7 @@ def transform(fn, proceed, to_instrument=True):
           the function is tucked so that it can refer to itself.
     """
     if not isinstance(fn, types.FunctionType):
-        raise TypeError("transform() only works on functions")
+        raise TypeError(f"transform() only works on functions (got {fn})")
 
     if to_instrument is True:
         to_instrument = [_GENERIC]

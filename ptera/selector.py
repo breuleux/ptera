@@ -10,7 +10,7 @@ from itertools import count
 
 from . import opparse
 from .tags import Tag, match_tag, tag as tag_factory
-from .utils import ABSENT, DictPile, cached_property
+from .utils import ABSENT, CodeNotFoundError, DictPile, cached_property
 
 _valid_hashvars = ("#enter", "#value", "#yield")
 
@@ -328,7 +328,8 @@ class Call(Selector):
                         )
 
                 else:
-                    data = info.get(x.name, None)
+                    name = x.name.split(".")[0]
+                    data = info.get(name, None)
                     if not data:
                         problems.append(
                             f"Cannot find a variable named `{x.name}` in `{func}`"
@@ -563,8 +564,23 @@ def dict_resolver(env):
         if x.startswith("/"):
             import codefind
 
-            _, module, *parts = x.split("/")
-            co = codefind.find_code(*parts, module=module or "__main__")
+            _, module, *hierarchy = x.split("/")
+            if any("." in part for part in hierarchy):
+                raise SelectorError(
+                    "Only the module part of a /selector can contain dots."
+                    " Try calling `ptera.refstring` on the function you want"
+                    " to select. It will return the proper way to refer to it."
+                )
+
+            try:
+                co = codefind.find_code(*hierarchy, module=module or "__main__")
+            except KeyError:
+                raise CodeNotFoundError(
+                    f"Cannot find a function for the reference '{x}'."
+                    " Try calling `ptera.refstring` on the function you want"
+                    " to select. It will return the proper way to refer to it."
+                )
+
             funcs = [
                 fn
                 for fn in codefind.get_functions(co)
