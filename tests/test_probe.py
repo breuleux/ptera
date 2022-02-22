@@ -366,3 +366,11 @@ def test_probe_instance():
             "intensity": 3,
         }
     ]
+
+
+def test_probe_total():
+    with probing("f(x, a)") as prb:
+        results = prb.accum()
+        f(12)
+
+    assert results == [{"x": 12, "a": 144}]

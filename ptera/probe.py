@@ -2,7 +2,7 @@ import atexit
 
 from giving import SourceProxy
 
-from .interpret import Immediate
+from .interpret import Immediate, Total
 from .overlay import BaseOverlay, autotool
 from .utils import ABSENT
 
@@ -54,7 +54,10 @@ class Probe(SourceProxy):
             # selector inplace
             self._selectors = [autotool(selector) for selector in selectors]
             rules = [
-                Immediate(sel, intercept=self._emit) for sel in self._selectors
+                Immediate(sel, intercept=self._emit)
+                if sel.focus
+                else Total(sel, close=self._emit)
+                for sel in self._selectors
             ]
             self._ol = BaseOverlay(*rules)
             self._raw = raw
