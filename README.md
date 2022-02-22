@@ -281,7 +281,7 @@ You can see that the associations are different (curr is 2 when i is 2, whereas 
 
 ### Example 2: multiple scopes
 
-A selector may act on several nested scopes in a call graph. For example, the selector `f(x) >> g(y) >> h > z` would capture variables `x`, `y` and `z` from the scopes of three different functions, but only when `f` calls `g` and `g` calls `h` (either directly or indirectly). (Note: `f(x) > g(y) > h > z` is also legal and is supposed to represent direct calls, but it may behave in confusing ways depending on which functions are instrumented globally, so avoid it for the time being).
+A selector may act on several nested scopes in a call graph. For example, the selector `f(x) > g(y) > h > z` would capture variables `x`, `y` and `z` from the scopes of three different functions, but only when `f` calls `g` and `g` calls `h` (either directly or indirectly).
 
 ```python
 def f(x):
@@ -291,7 +291,7 @@ def g(x):
     return x * 2
 
 # Use "as" to rename a variable if there is a name conflict
-with probing("f(x) >> g > x as gx").print():
+with probing("f(x) > g > x as gx").print():
     f(5)
     # {'gx': 6, 'x': 5}
     # {'gx': -6, 'x': 5}
@@ -425,6 +425,8 @@ The slashes represent a physical nesting rather than object attributes. For exam
 * Enter `def x` or `class x` (it will *not* work if `x` is imported from elsewhere)
 * Within that definition, enter `def y` or `class y`
 
+The helper function `ptera.refstring(fn)` can be used to get the absolute path for a function.
+
 Note:
 
 * Unlike the normal notation, the absolute notation bypasses decorators: `/module/function` will probe the function inside the `def function(): ...` in `module.py`, so it will work even if the function was wrapped by a decorator (unless the decorator does not actually call the function).
@@ -437,65 +439,3 @@ Note:
 All the [operators](https://giving.readthedocs.io/en/latest/ref-operators.html) defined in the `rx` and `giving` packages should be compatible with `global_probe` and `probing`. You can also define [custom operators](https://rxpy.readthedocs.io/en/latest/get_started.html#custom-operator).
 
 [Read this operator guide](https://giving.readthedocs.io/en/latest/guide.html#important-methods) for the most useful features (the `gv` variable in the examples has the same interface as probes).
-
-
-## Query language
-
-**Note:** this section contains some references to a different interface to `ptera` which is still valid, but not documented.
-
-Here is some code annotated with queries that will match various variables. The queries are not exhaustive, just examples.
-
-* The semicolon ";" is used to separate queries and it is not part of any query.
-* The hash character "#" *is* part of the query if there is no space after it, otherwise it starts a comment.
-
-```python
-from ptera import ptera, tag
-
-Animal = tag.Animal
-Thing = tag.Thing
-
-@tooled
-def art(a, b):               # art > a ; art > b ; art(!a, b) ; art(a, !b)
-
-    a1: Animal = bee(a)      # a1 ; art > a1 ; art(!a1) ; art > $x
-                             # a1:Animal ; $x:Animal
-                             # art(!a1) > bee > d  # Focus on a1, also includes d
-                             # art > bee  # This refers to the bee function
-                             # * > a1 ; *(!a1)
-
-    a2: Thing = cap(b)       # a2 ; art > a2 ; art(!a2) ; art > $x
-                             # a2:Thing ; $x:Thing
-
-    return a1 + a2           # art > #value ; art(#value as art_result)
-                             # art() as art_result
-                             # art > $x
-
-
-@tooled
-def bee(c):
-    c1 = c + 1               # bee > c1 ; art >> c1 ; art(a2) > bee > c1
-                             # bee > c1 as xyz
-
-    return c1                # bee > #value ; bee(c) as bee_value
-
-
-@tooled
-def cap(d: Thing & int):     # cap > d ; $x:Thing ; cap > $x
-                             # art(bee(c)) > cap > d
-    return d * d
-```
-
-* The `!` operator marks the **focus** of the query. There will be one result for each time the focus is triggered, and when using `tweak` or `rewrite` the focus is what is being tweaked or rewritten.
-  * Other variables are supplemental information, available along with the focus in query results. They can also be used to compute a value for the focus *if* they are available by the time the focus is reached.
-  * The nesting operators `>` and `>>` automatically set the focus to the right hand side if the rhs is a single variable and the operator is not inside `(...)`.
-* The wildcard `*` stands in for any function.
-* The `>>` operator represents **deep nesting**. For example, `art >> c1` encompasses the pattern `art > bee > c1`.
-  * In general, `a >> z` encompasses `a > z`, `a > b > z`, `a > b > c > z`, `a > * > z`, and so on.
-* A function's return value corresponds to a special variable named `#value`.
-* `$x` will match any variable name. Getting the variable name for the capture is possible but requires the `map_full` method. For example:
-  * Query: `art > $x`
-  * Getting the names: `results.map_full(lambda x: x.name) == ["a1", "a2", "#value"]`
-  * Other fields accessible from `map_full` are `value`, `names` and `values`, the latter two being needed if multiple results are captured together.
-* Variable annotations are preserved and can be filtered on, using the `:` operator. However, *Ptera only recognizes tags* created using `ptera.Tag("XYZ")` or `ptera.tag.XYZ`. It will not filter over types.
-* `art(bee(c)) > cap > d` triggers on the variable `d` in calls to `cap`, but it will *also* include the value of `c` for all calls to `bee` inside `art`.
-  * If there are multiple calls to `bee`, all values of `c` will be pooled together, and it will be necessary to use `map_all` to retrieve the values (or `map_full`).
