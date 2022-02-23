@@ -330,40 +330,43 @@ class Overlay(BaseOverlay):
 
 
 @keyword_decorator
-def tooled(fn, inplace=False):
+def tooled(fn):
     """Tool a function so that it can report changes in its variables to Ptera.
 
     ``@tooled`` can be used as a decorator.
 
-    You may write ``@tooled(inplace=True)`` or ``@tooled.inplace`` as decorators
-    to tool a function inplace.
+    .. note::
+        You may write ``@tooled.inplace`` as a decorator to tool a
+        function inplace.
 
     Arguments:
         fn: The function to tool.
-        inplace: Whether to change the function inplace.
     """
     if is_tooled(fn):
         return fn
-    new_fn = transform(fn, proceed=proceed)
-    if inplace:
-        try:
-            from codefind import code_registry
+    return transform(fn, proceed=proceed)
 
-            code_registry.update_cache_entry(fn, fn.__code__, new_fn.__code__)
-            fn._conformer = new_fn._conformer
-        except ImportError:  # pragma: no cover
-            pass
-        fn.__code__ = new_fn.__code__
-        fn.__ptera_info__ = new_fn.__ptera_info__
-        fn.__ptera_token__ = new_fn.__ptera_token__
-        new_fn.__ptera_discard__ = True
-        fn.__globals__[fn.__ptera_token__] = fn
+
+def inplace(fn):
+    if is_tooled(fn):
         return fn
-    else:
-        return new_fn
+    new_fn = transform(fn, proceed=proceed)
+    try:
+        from codefind import code_registry
+
+        code_registry.update_cache_entry(fn, fn.__code__, new_fn.__code__)
+        fn._conformer = new_fn._conformer
+    except ImportError:  # pragma: no cover
+        pass
+    fn.__code__ = new_fn.__code__
+    fn.__ptera_info__ = new_fn.__ptera_info__
+    fn.__ptera_token__ = new_fn.__ptera_token__
+    new_fn.__ptera_discard__ = True
+    fn.__globals__[fn.__ptera_token__] = fn
+    return fn
 
 
-tooled.inplace = tooled(inplace=True)
+tooled.inplace = inplace
 
 
 def is_tooled(fn):
