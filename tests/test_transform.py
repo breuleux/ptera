@@ -1,11 +1,19 @@
 import functools
 import sys
+from contextlib import contextmanager
+from contextvars import ContextVar
 from types import SimpleNamespace
 
 import pytest
 
 from ptera.selector import Element, SelectorError, select
-from ptera.transform import Key, name_error, transform
+from ptera.transform import (
+    Key,
+    StackedTransforms,
+    TransformSet,
+    name_error,
+    transform,
+)
 from ptera.utils import ABSENT, keyword_decorator
 
 from .common import one_test_per_assert
@@ -19,6 +27,9 @@ def _format_sym(entry):
         elif key.type == "index":
             rval += f"[{key.value}]"
     return rval
+
+
+_current_layer = ContextVar("_current_layer", default=None)
 
 
 class Interactions(list):
@@ -66,30 +77,27 @@ def test_Interactions():
     assert xs.vals_for("c") == [-1]
 
 
+class SimpleInteractor:
+    def __init__(self, fn):
+        self.fn = fn
+        self.results, self.overrides = _current_layer.get()
+
+    def interact(self, sym, key, category, value, overridable):
+        self.results.append((sym, key, category, value, overridable))
+        rval = self.overrides.get(sym, value)
+        if rval is ABSENT:
+            raise name_error(sym, self.fn)
+        return rval
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        pass
+
+
 @keyword_decorator
-def wrap(fn, all=False, names=True):
-    results = Interactions()
-    overrides = {}
-
-    class SimpleInteractor:
-        def __init__(self, fn):
-            self.fn = fn
-            self.results = results
-            self.overrides = overrides
-
-        def interact(self, sym, key, category, value, overridable):
-            self.results.append((sym, key, category, value, overridable))
-            rval = self.overrides.get(sym, value)
-            if rval is ABSENT:
-                raise name_error(sym, self.fn)
-            return rval
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            pass
-
+def wrap(fn, all=False, names=True, noreset=False):
     new_fn = transform(
         fn,
         proceed=SimpleInteractor,
@@ -99,12 +107,13 @@ def wrap(fn, all=False, names=True):
     )
 
     @functools.wraps(fn)
-    def wrapped(*args, **ovrd):
-        kw = ovrd.pop("KW", {})
-        results.clear()
-        overrides.clear()
-        overrides.update(ovrd)
+    def wrapped(*args, **overrides):
+        kw = overrides.pop("KW", {})
+        results = Interactions()
+        reset = _current_layer.set((results, overrides))
         rval = new_fn(*args, **kw)
+        if not noreset:
+            _current_layer.reset(reset)
         results.actual_ret = rval
         if all:
             return results
@@ -411,7 +420,7 @@ def test_while_loop():
 
 
 def test_generator():
-    @wrap
+    @wrap(noreset=True)
     def oxygen():
         j = 0
         for i in range(10):
@@ -572,3 +581,65 @@ if sys.version_info >= (3, 8, 0):
 
         assert ratatouille(5) == 36
         assert ratatouille(5, y=3) == 9
+
+
+def test_stacked_transforms():
+    @contextmanager
+    def with_syms(caps=None):
+        results = Interactions()
+        reset = _current_layer.set((results, {}))
+        if caps:
+            st.push(caps)
+        yield results
+        if caps:
+            st.pop(caps)
+        _current_layer.reset(reset)
+
+    def comb(x):
+        y = x + 1
+        z = y + 1
+        q = z + 1
+        return q
+
+    st = StackedTransforms(TransformSet(comb, proceed=SimpleInteractor))
+
+    with with_syms() as results:
+        st.get()(50)
+    assert results == []
+
+    with with_syms(select("comb > x").captures) as results:
+        st.get()(50)
+    assert results.syms() == ["x"]
+
+    with with_syms(select("comb(x) > y").captures) as results:
+        st.get()(50)
+    assert results.syms() == ["x", "y"]
+
+    with with_syms(select("comb > $x").captures) as results:
+        st.get()(50)
+    assert results.syms() == ["#enter", "x", "y", "z", "q", "#value"]
+
+    with with_syms(select("comb() as fabulous").captures) as results:
+        st.get()(50)
+    assert results.syms() == ["#value"]
+
+    with with_syms(select("comb > x").captures) as results_outer:
+        with with_syms(select("comb > y").captures) as results_inner:
+            st.get()(50)
+        st.get()(50)
+    assert results_outer.syms() == ["x"]
+    assert results_inner.syms() == ["x", "y"]
+
+    with with_syms(select("comb > x").captures) as results_outer:
+        with with_syms(select("comb > y").captures) as results_inner1:
+            with with_syms(select("comb(x) > y").captures) as results_inner2:
+                st.get()(50)
+            st.get()(50)
+        st.get()(50)
+    assert results_outer.syms() == ["x"]
+    assert results_inner1.syms() == ["x", "y"]
+    assert results_inner2.syms() == ["x", "y"]
+
+    with with_syms() as results:
+        st.get()(50)
+    assert results == []

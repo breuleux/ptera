@@ -6,6 +6,7 @@ import re
 import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
+from collections import Counter
 from copy import deepcopy
 from functools import reduce
 from itertools import count
@@ -873,3 +874,41 @@ def transform(fn, proceed, to_instrument=True):
     actual_fn.__ptera_info__ = info
     actual_fn.__ptera_token__ = fnsym
     return actual_fn
+
+
+class TransformSet:
+    def __init__(self, fn, proceed):
+        self.original_fn = fn
+        self.proceed = proceed
+        self.transforms = {frozenset(): fn}
+
+    def transform_for(self, captures):
+        captures = frozenset(captures)
+        if captures in self.transforms:
+            return self.transforms[captures]
+
+        transformed = transform(
+            self.original_fn, proceed=self.proceed, to_instrument=captures
+        )
+
+        self.transforms[captures] = transformed
+        return transformed
+
+
+class StackedTransforms:
+    def __init__(self, tset):
+        self.tset = tset
+        self.captures = Counter()
+
+    def push(self, captures):
+        for cap in captures:
+            self.captures[cap] += 1
+
+    def pop(self, captures):
+        for cap in captures:
+            self.captures[cap] -= 1
+
+    def get(self):
+        return self.tset.transform_for(
+            cap for cap, count in self.captures.items() if count > 0
+        )
