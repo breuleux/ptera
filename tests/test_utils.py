@@ -21,12 +21,22 @@ def bonjours():
     return helloes()
 
 
+class Corn:
+    def __init__(self, x):
+        self.x = x
+
+    def __call__(self):
+        return self.x
+
+
 @one_test_per_assert
 def test_refstring():
     assert refstring(helloes) == "/tests.test_utils/helloes"
     assert refstring(bonjours) == "/tests.test_utils/helloes"
     assert refstring(one_test_per_assert) == "/tests.common/one_test_per_assert"
     assert refstring(refstring) == "/ptera.utils/refstring"
+    assert refstring(Corn) == "/tests.test_utils/Corn/__init__"
+    assert refstring(Corn(4)) == "/tests.test_utils/Corn/__call__"
 
 
 def test_refstring_closure():

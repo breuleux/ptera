@@ -1,6 +1,7 @@
 """Miscellaneous utilities."""
 
 import functools
+import types
 
 
 class Named:
@@ -108,6 +109,16 @@ class CodeNotFoundError(Exception):
 
 
 def _extract_info(fn):
+    if isinstance(fn, type) and hasattr(fn, "__init__"):
+        return _extract_info(fn.__init__)
+    elif (
+        not isinstance(fn, types.FunctionType)
+        and not isinstance(fn, types.MethodType)
+        and not isinstance(fn, types.MethodWrapperType)
+        and hasattr(fn, "__call__")
+        and isinstance(fn.__call__, (types.FunctionType, types.MethodType))
+    ):
+        return _extract_info(fn.__call__)
     module = getattr(fn, "__module__", None)
     qualname = getattr(fn, "__qualname__", None)
     if module is not None and qualname is not None:
