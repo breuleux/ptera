@@ -5,7 +5,7 @@ from contextvars import ContextVar
 
 from .interpret import Immediate, Interactor, Total
 from .selector import check_element, select, verify
-from .transform import transform
+from .transform import StackedTransforms, TransformSet, transform
 from .utils import autocreate, keyword_decorator
 
 # Cache whether functions match selectors
@@ -374,7 +374,28 @@ def is_tooled(fn):
     return isinstance(fn, types.FunctionType) and hasattr(fn, "__ptera_info__")
 
 
-def autotool(selector):
+def _tooler(fn, captures):
+    if hasattr(fn, "__ptera_stack__"):
+        st = fn.__ptera_stack__
+    else:
+        st = fn.__ptera_stack__ = StackedTransforms(
+            TransformSet(fn, proceed=proceed)
+        )
+
+    st.push(captures)
+    st.apply(fn)
+    return fn
+
+
+def _untooler(fn, captures):
+    if hasattr(fn, "__ptera_stack__"):
+        st = fn.__ptera_stack__
+        st.pop(captures)
+        st.apply(fn)
+    return fn
+
+
+def autotool(selector, undo=False):
     """Automatically tool functions inplace.
 
     Arguments:
@@ -382,8 +403,11 @@ def autotool(selector):
             function it refers to will be tooled.
     """
     rval = select(selector)
-    rval = rval.wrap_functions(tooled.inplace)
-    verify(rval)
+    if undo:
+        rval = rval.wrap_functions(_untooler)
+    else:
+        rval = rval.wrap_functions(_tooler)
+        verify(rval)
     return rval
 
 

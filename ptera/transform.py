@@ -923,3 +923,19 @@ class StackedTransforms:
         return self.tset.transform_for(
             cap for cap, count in self.captures.items() if count > 0
         )
+
+    def apply(self, fn):
+        _, code, info, token = self.get()
+
+        try:
+            from codefind import code_registry
+
+            code_registry.update_cache_entry(fn, fn.__code__, code)
+        except ImportError:  # pragma: no cover
+            pass
+
+        fn.__code__ = code
+        fn.__ptera_info__ = info
+        fn.__ptera_token__ = token
+        fn.__ptera_discard__ = False
+        fn.__globals__[fn.__ptera_token__] = fn

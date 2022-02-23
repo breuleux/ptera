@@ -152,11 +152,6 @@ class Element(Selector):
         )
         return rval
 
-    def wrap_functions(self, wrap):
-        return self.clone(
-            name=wrap(self.name),
-        )
-
     def encode(self):
         """Return a string representation of the selector."""
         if self.name is None and self.capture is not None:
@@ -272,8 +267,11 @@ class Call(Selector):
         )
 
     def wrap_functions(self, wrap):
+        element = self.element.clone(
+            name=wrap(self.element.name, self.captures)
+        )
         return self.clone(
-            element=self.element.wrap_functions(wrap),
+            element=element,
             children=tuple(
                 child.wrap_functions(wrap) for child in self.children
             ),
@@ -585,7 +583,7 @@ def dict_resolver(env):
                 fn
                 for fn in codefind.get_functions(co)
                 if inspect.isfunction(fn)
-                and not hasattr(fn, "__ptera_discard__")
+                and not getattr(fn, "__ptera_discard__", False)
             ]
             if not funcs:  # pragma: no cover
                 raise Exception(f"Reference `{x}` cannot be resolved.")

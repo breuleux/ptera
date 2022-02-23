@@ -4,6 +4,7 @@ from giving import SourceProxy
 
 from .interpret import Immediate, Total
 from .overlay import BaseOverlay, autotool
+from .selector import select
 from .utils import ABSENT
 
 global_probes = set()
@@ -50,9 +51,7 @@ class Probe(SourceProxy):
         super().__init__(_obs=_obs, _root=_root)
 
         if selectors:
-            # autotool will instrument the functions referred to by the
-            # selector inplace
-            self._selectors = [autotool(selector) for selector in selectors]
+            self._selectors = [select(s) for s in selectors]
             rules = [
                 Immediate(sel, intercept=self._emit)
                 if sel.focus
@@ -62,6 +61,14 @@ class Probe(SourceProxy):
             self._ol = BaseOverlay(*rules)
             self._raw = raw
             self._activated = False
+
+    def _install_tooling(self):
+        for selector in self._selectors:
+            autotool(selector)
+
+    def _uninstall_tooling(self):
+        for selector in self._selectors:
+            autotool(selector, undo=True)
 
     def override(self, setter=_identity):
         """Override the value of the focus variable using a setter function.
@@ -180,6 +187,7 @@ class Probe(SourceProxy):
         if self._activated:
             raise Exception("An instance of Probe can only be entered once")
 
+        self._install_tooling()
         self._activated = True
         global_probes.add(self)
         self._ol.__enter__()
@@ -189,6 +197,7 @@ class Probe(SourceProxy):
         # This is called on the root probe by the __exit__ method of a child.
         self._ol.__exit__(None, None, None)
         global_probes.remove(self)
+        self._uninstall_tooling()
 
 
 def probing(*selectors, raw=False):
