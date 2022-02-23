@@ -595,6 +595,10 @@ def test_stacked_transforms():
             st.pop(caps)
         _current_layer.reset(reset)
 
+    def call(arg):
+        fn, *_ = st.get()
+        return fn(arg)
+
     def comb(x):
         y = x + 1
         z = y + 1
@@ -604,42 +608,45 @@ def test_stacked_transforms():
     st = StackedTransforms(TransformSet(comb, proceed=SimpleInteractor))
 
     with with_syms() as results:
-        st.get()(50)
+        assert st.get()[0] is comb
+        call(50)
     assert results == []
 
     with with_syms(select("comb > x").captures) as results:
-        st.get()(50)
+        assert st.get()[0] is not comb
+        call(50)
+    assert st.get()[0] is comb
     assert results.syms() == ["x"]
 
     with with_syms(select("comb(x) > y").captures) as results:
-        st.get()(50)
+        call(50)
     assert results.syms() == ["x", "y"]
 
     with with_syms(select("comb > $x").captures) as results:
-        st.get()(50)
+        call(50)
     assert results.syms() == ["#enter", "x", "y", "z", "q", "#value"]
 
     with with_syms(select("comb() as fabulous").captures) as results:
-        st.get()(50)
+        call(50)
     assert results.syms() == ["#value"]
 
     with with_syms(select("comb > x").captures) as results_outer:
         with with_syms(select("comb > y").captures) as results_inner:
-            st.get()(50)
-        st.get()(50)
+            call(50)
+        call(50)
     assert results_outer.syms() == ["x"]
     assert results_inner.syms() == ["x", "y"]
 
     with with_syms(select("comb > x").captures) as results_outer:
         with with_syms(select("comb > y").captures) as results_inner1:
             with with_syms(select("comb(x) > y").captures) as results_inner2:
-                st.get()(50)
-            st.get()(50)
-        st.get()(50)
+                call(50)
+            call(50)
+        call(50)
     assert results_outer.syms() == ["x"]
     assert results_inner1.syms() == ["x", "y"]
     assert results_inner2.syms() == ["x", "y"]
 
     with with_syms() as results:
-        st.get()(50)
+        call(50)
     assert results == []

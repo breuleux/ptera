@@ -880,7 +880,20 @@ class TransformSet:
     def __init__(self, fn, proceed):
         self.original_fn = fn
         self.proceed = proceed
-        self.transforms = {frozenset(): fn}
+        self.transforms = {}
+        self._register(frozenset(), fn)
+
+    def _conform(self, new):
+        assert False
+
+    def _register(self, captures, fn):
+        self.transforms[captures] = (
+            fn,
+            fn.__code__,
+            getattr(fn, "__ptera_info__", None),
+            getattr(fn, "__ptera_token__", None),
+        )
+        return self.transforms[captures]
 
     def transform_for(self, captures):
         captures = frozenset(captures)
@@ -890,9 +903,7 @@ class TransformSet:
         transformed = transform(
             self.original_fn, proceed=self.proceed, to_instrument=captures
         )
-
-        self.transforms[captures] = transformed
-        return transformed
+        return self._register(captures, transformed)
 
 
 class StackedTransforms:
