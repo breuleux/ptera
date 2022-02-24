@@ -924,7 +924,22 @@ class StackedTransforms:
             cap for cap, count in self.captures.items() if count > 0
         )
 
-    def apply(self, fn):
+
+class SyncedStackedTransforms(StackedTransforms):
+    def __init__(self, fn, proceed):
+        tset = TransformSet(fn, proceed)
+        super().__init__(tset)
+        self.target = fn
+
+    def push(self, captures):
+        super().push(captures)
+        self._apply(self.target)
+
+    def pop(self, captures):
+        super().pop(captures)
+        self._apply(self.target)
+
+    def _apply(self, fn):
         _, code, info, token = self.get()
 
         try:

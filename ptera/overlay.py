@@ -5,7 +5,7 @@ from contextvars import ContextVar
 
 from .interpret import Immediate, Interactor, Total
 from .selector import check_element, select, verify
-from .transform import StackedTransforms, TransformSet, transform
+from .transform import SyncedStackedTransforms, transform
 from .utils import autocreate, keyword_decorator
 
 # Cache whether functions match selectors
@@ -378,12 +378,9 @@ def _tooler(fn, captures):
     if hasattr(fn, "__ptera_stack__"):
         st = fn.__ptera_stack__
     else:
-        st = fn.__ptera_stack__ = StackedTransforms(
-            TransformSet(fn, proceed=proceed)
-        )
+        st = fn.__ptera_stack__ = SyncedStackedTransforms(fn, proceed=proceed)
 
     st.push(captures)
-    st.apply(fn)
     return fn
 
 
@@ -391,7 +388,6 @@ def _untooler(fn, captures):
     if hasattr(fn, "__ptera_stack__"):
         st = fn.__ptera_stack__
         st.pop(captures)
-        st.apply(fn)
     return fn
 
 
