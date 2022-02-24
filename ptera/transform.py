@@ -441,7 +441,7 @@ class PteraTransformer(NodeTransformer):
                     ann=None,
                     value=ast.Subscript(
                         value=ast.Name(id="__ptera_globals", ctx=ast.Load()),
-                        slice=ast.Constant(external),
+                        slice=ast.Index(value=ast.Constant(external)),
                         ctx=ast.Load(),
                     ),
                     orig=node,
