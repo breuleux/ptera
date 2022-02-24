@@ -725,7 +725,7 @@ def _compile(filename, tree, freevars):
             ast.FunctionDef(
                 name="#WRAP",
                 args=ast.arguments(
-                    args=[ast.arg(name) for name in freevars],
+                    args=[ast.arg(arg=name) for name in freevars],
                     vararg=None,
                     kwonlyargs=[],
                     kw_defaults=[],

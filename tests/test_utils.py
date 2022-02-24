@@ -1,4 +1,5 @@
 import functools
+import sys
 
 import pytest
 
@@ -30,6 +31,9 @@ class Corn:
 
 
 @one_test_per_assert
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_refstring():
     assert refstring(helloes) == "/tests.test_utils/helloes"
     assert refstring(bonjours) == "/tests.test_utils/helloes"
@@ -39,6 +43,9 @@ def test_refstring():
     assert refstring(Corn(4)) == "/tests.test_utils/Corn/__call__"
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_refstring_closure():
     def inner():
         pass
@@ -46,6 +53,9 @@ def test_refstring_closure():
     assert refstring(inner) == "/tests.test_utils/test_refstring_closure/inner"
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_refstring_bad():
     def liar():
         pass
@@ -56,12 +66,18 @@ def test_refstring_bad():
         refstring(liar)
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_refstring_bad2():
     with pytest.raises(TypeError):
         refstring("not_a_function")
 
 
 @one_test_per_assert
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_build_refstring():
     assert _build_refstring("a", "b") == "/a/b"
     assert _build_refstring("__main__", "b") == "//b"

@@ -48,6 +48,10 @@ def one_test_per_assert(fn):
     new_fn = compile(new_tree, filename, "exec")
     glb = fn.__globals__
     exec(new_fn, glb, glb)
+    if hasattr(fn, "pytestmark"):
+        for name, value in glb.items():
+            if name.startswith(fn.__name__):
+                value.pytestmark = fn.pytestmark
     return None
 
 

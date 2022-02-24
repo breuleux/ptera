@@ -558,29 +558,34 @@ def test_kwonly():
     ]
 
 
-if sys.version_info >= (3, 8, 0):
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
+def test_named_expression():
+    from .feat38 import ratatouille
 
-    def test_named_expression():
-        from .feat38 import ratatouille
+    ratatouille = wrap(ratatouille)
 
-        ratatouille = wrap(ratatouille)
+    assert ratatouille(5) == 36
+    assert ratatouille(5, y=3) == 9
 
-        assert ratatouille(5) == 36
-        assert ratatouille(5, y=3) == 9
 
-    def test_positional():
-        from .feat38 import gnarly
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
+def test_positional():
+    from .feat38 import gnarly
 
-        gnarly = wrap(all=True)(gnarly)
+    gnarly = wrap(all=True)(gnarly)
 
-        data = gnarly(21, 32)
-        assert data.ret == 53
-        assert data == [
-            ("#enter", None, None, True, False),
-            ("x", None, None, 21, True),
-            ("y", None, None, 32, True),
-            ("#value", None, None, 53, True),
-        ]
+    data = gnarly(21, 32)
+    assert data.ret == 53
+    assert data == [
+        ("#enter", None, None, True, False),
+        ("x", None, None, 21, True),
+        ("y", None, None, 32, True),
+        ("#value", None, None, 53, True),
+    ]
 
 
 def test_stacked_transforms():
