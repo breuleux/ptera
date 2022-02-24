@@ -733,7 +733,7 @@ def _compile(filename, tree, freevars):
                     defaults=[],
                     **kwargs,
                 ),
-                body=[tree, ast.Return(ast.Name(tree.name, ctx=ast.Load()))],
+                body=[tree, ast.Return(ast.Name(id=tree.name, ctx=ast.Load()))],
                 decorator_list=[],
                 returns=tree.returns,
             ),
