@@ -3,6 +3,7 @@
 import ast
 import inspect
 import re
+import sys
 import tokenize
 import types
 from ast import NodeTransformer, NodeVisitor
@@ -377,7 +378,7 @@ class PteraTransformer(NodeTransformer):
     def generate_interactions(self, target):
         if isinstance(target, ast.arguments):
             arglist = [
-                *target.posonlyargs,
+                *getattr(target, "posonlyargs", []),
                 *target.args,
                 *target.kwonlyargs,
                 target.vararg,
@@ -716,17 +717,21 @@ class _Conformer2:
 
 def _compile(filename, tree, freevars):
     if freevars:
+        if sys.version_info >= (3, 8, 0):  # pragma: no cover
+            kwargs = {"posonlyargs": []}
+        else:  # pragma: no cover
+            kwargs = {}
         tree = ast.copy_location(
             ast.FunctionDef(
                 name="#WRAP",
                 args=ast.arguments(
-                    posonlyargs=[],
                     args=[ast.arg(name) for name in freevars],
                     vararg=None,
                     kwonlyargs=[],
                     kw_defaults=[],
                     kwarg=None,
                     defaults=[],
+                    **kwargs,
                 ),
                 body=[tree, ast.Return(ast.Name(tree.name, ctx=ast.Load()))],
                 decorator_list=[],
