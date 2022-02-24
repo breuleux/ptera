@@ -10,6 +10,7 @@ from ptera.selector import Element, SelectorError, select
 from ptera.transform import (
     Key,
     StackedTransforms,
+    SyncedStackedTransforms,
     TransformSet,
     name_error,
     transform,
@@ -650,3 +651,55 @@ def test_stacked_transforms():
     with with_syms() as results:
         call(50)
     assert results == []
+
+
+def test_stacked_transforms_conform():
+    from codefind import conform
+
+    @contextmanager
+    def with_syms(caps=None):
+        results = Interactions()
+        reset = _current_layer.set((results, {}))
+        if caps:
+            st.push(caps)
+        yield results
+        if caps:
+            st.pop(caps)
+        _current_layer.reset(reset)
+
+    def first(x):
+        y = 10
+        return x + y
+
+    def second(x):
+        y = 20
+        return x + y
+
+    def third(x):
+        y = 30
+        return x + y
+
+    orig_code = first.__code__
+
+    st = SyncedStackedTransforms(first, proceed=SimpleInteractor)
+
+    with with_syms(select("first > y").captures) as results:
+        assert first(2) == 12
+        conform(orig_code, second)
+        assert first(2) == 22
+
+    assert first(2) == 22
+
+    assert results == [
+        ("y", None, None, 10, True),
+        ("y", None, None, 20, True),
+    ]
+
+    conform(second.__code__, third)
+
+    with with_syms(select("first > y").captures) as results:
+        assert first(2) == 32
+
+    assert results == [
+        ("y", None, None, 30, True),
+    ]

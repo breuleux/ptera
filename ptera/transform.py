@@ -691,6 +691,29 @@ class _Conformer:
         self.code = new_code
 
 
+class _Conformer2:
+    """Implements codefind's __conform__ protocol.
+
+    This allows a package like jurigged to hot patch functions that
+    are modified by ptera, and ptera will be able to re-run the
+    tooling on the new version. Might not work perfectly reliably.
+    """
+
+    # TODO: Merge _Conformer and _Conformer2
+
+    __slots__ = ("code", "listener")
+
+    def __init__(self, code, listener):
+        self.code = code
+        self.listener = listener
+
+    def __conform__(self, new):
+        if isinstance(new, types.CodeType):  # pragma: no cover
+            self.code = new
+            return
+        self.listener(new)
+
+
 def _compile(filename, tree, freevars):
     if freevars:
         tree = ast.copy_location(
@@ -716,7 +739,7 @@ def _compile(filename, tree, freevars):
     return compile(ast.Module(body=[tree], type_ignores=[]), filename, "exec")
 
 
-def transform(fn, proceed, to_instrument=True):
+def transform(fn, proceed, to_instrument=True, set_conformer=True):
     """Return an instrumented version of fn.
 
     The transform roughly works as follows.
@@ -752,6 +775,13 @@ def transform(fn, proceed, to_instrument=True):
           representing the variables to instrument, or True. If
           True (or if one Element is a generic), all variables
           are instrumented.
+        set_conformer: Whether to set a "conformer" on the resulting
+          function which will update the code when the original code
+          is remapped through the codefind module (e.g. if you use
+          ``jurigged`` to change source while it is running, the
+          conformer will update the instrumentation to correspond
+          to the new version of the function). Mostly for internal
+          use.
 
     Returns:
         A new function that is an instrumented version of the old one.
@@ -870,21 +900,37 @@ def transform(fn, proceed, to_instrument=True):
         for k in all_vars
     }
 
-    actual_fn._conformer = _Conformer(fn, actual_fn, proceed)
+    if set_conformer:
+        actual_fn._conformer = _Conformer(fn, actual_fn, proceed)
     actual_fn.__ptera_info__ = info
     actual_fn.__ptera_token__ = fnsym
     return actual_fn
 
 
 class TransformSet:
-    def __init__(self, fn, proceed):
-        self.original_fn = fn
+    def __init__(self, fn, proceed, set_conformer=True):
         self.proceed = proceed
+        self.set_conformer = set_conformer
         self.transforms = {}
+        self._set_base(fn)
+
+    def _set_base(self, fn):
+        self.base_function = types.FunctionType(
+            code=fn.__code__,
+            globals=fn.__globals__,
+            name=fn.__name__,
+            argdefs=fn.__defaults__,
+            closure=fn.__closure__,
+        )
+        self.base_function.__ptera_discard__ = True
         self._register(frozenset(), fn)
 
     def _conform(self, new):
-        assert False
+        old_transforms = self.transforms
+        self.transforms = {}
+        self._set_base(new)
+        for caps in old_transforms.keys():
+            self.transform_for(caps)
 
     def _register(self, captures, fn):
         self.transforms[captures] = (
@@ -901,7 +947,10 @@ class TransformSet:
             return self.transforms[captures]
 
         transformed = transform(
-            self.original_fn, proceed=self.proceed, to_instrument=captures
+            self.base_function,
+            proceed=self.proceed,
+            to_instrument=captures,
+            set_conformer=self.set_conformer,
         )
         return self._register(captures, transformed)
 
@@ -927,9 +976,15 @@ class StackedTransforms:
 
 class SyncedStackedTransforms(StackedTransforms):
     def __init__(self, fn, proceed):
-        tset = TransformSet(fn, proceed)
+        self.conformer = _Conformer2(fn.__code__, self._conform)
+        tset = TransformSet(fn, proceed, set_conformer=False)
         super().__init__(tset)
         self.target = fn
+
+    def _conform(self, new):
+        self.tset._conform(new)
+        self._apply(self.target)
+        self.conformer.code = new.__code__
 
     def push(self, captures):
         super().push(captures)

@@ -348,7 +348,7 @@ def tooled(fn):
 
 
 def inplace(fn):
-    if is_tooled(fn):
+    if is_tooled(fn):  # pragma: no cover
         return fn
     new_fn = transform(fn, proceed=proceed)
     try:
