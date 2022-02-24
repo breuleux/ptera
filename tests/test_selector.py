@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from ptera import selector as sel, tag
@@ -316,11 +318,17 @@ def test_bad_local_resolve():
         sel.select("inside_scoop > x")
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_bad_slash_selector():
     with pytest.raises(sel.SelectorError):
         sel.select("//a/b.c > x")
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_code_not_found():
     with pytest.raises(sel.CodeNotFoundError):
         sel.select("//what > x")

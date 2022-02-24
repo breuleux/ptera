@@ -657,6 +657,9 @@ def test_stacked_transforms():
     assert results == []
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8), reason="requires python3.8 or higher"
+)
 def test_stacked_transforms_conform():
     from codefind import conform
 
