@@ -558,30 +558,29 @@ def test_kwonly():
     ]
 
 
-def test_positional():
-    @wrap(all=True)
-    def gnarly(x, /, y):
-        return x + y
-
-    data = gnarly(21, 32)
-    assert data.ret == 53
-    assert data == [
-        ("#enter", None, None, True, False),
-        ("x", None, None, 21, True),
-        ("y", None, None, 32, True),
-        ("#value", None, None, 53, True),
-    ]
-
-
 if sys.version_info >= (3, 8, 0):
 
     def test_named_expression():
-        from .walrus import ratatouille
+        from .feat38 import ratatouille
 
         ratatouille = wrap(ratatouille)
 
         assert ratatouille(5) == 36
         assert ratatouille(5, y=3) == 9
+
+    def test_positional():
+        from .feat38 import gnarly
+
+        gnarly = wrap(all=True)(gnarly)
+
+        data = gnarly(21, 32)
+        assert data.ret == 53
+        assert data == [
+            ("#enter", None, None, True, False),
+            ("x", None, None, 21, True),
+            ("y", None, None, 32, True),
+            ("#value", None, None, 53, True),
+        ]
 
 
 def test_stacked_transforms():
