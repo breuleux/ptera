@@ -227,7 +227,7 @@ class PteraTransformer(NodeTransformer):
             tags = re.split(r" *& *", ann.s)
             ann = ast.copy_location(
                 ast.Call(
-                    self._get("get_tags"),
+                    func=self._get("get_tags"),
                     args=[
                         ast.Str(s=tag[1:])
                         for tag in tags
