@@ -928,7 +928,7 @@ class TransformSet:
             closure=fn.__closure__,
         )
         self.base_function.__ptera_discard__ = True
-        self._register(frozenset(), fn)
+        self._register(None, fn)
 
     def _conform(self, new):
         old_transforms = self.transforms
@@ -947,7 +947,8 @@ class TransformSet:
         return self.transforms[captures]
 
     def transform_for(self, captures):
-        captures = frozenset(captures)
+        if captures is not None:
+            captures = frozenset(captures)
         if captures in self.transforms:
             return self.transforms[captures]
 
@@ -963,20 +964,25 @@ class TransformSet:
 class StackedTransforms:
     def __init__(self, tset):
         self.tset = tset
+        self.instrument_count = 0
         self.captures = Counter()
 
     def push(self, captures):
+        self.instrument_count += 1
         for cap in captures:
             self.captures[cap] += 1
 
     def pop(self, captures):
+        self.instrument_count -= 1
         for cap in captures:
             self.captures[cap] -= 1
 
     def get(self):
-        return self.tset.transform_for(
-            cap for cap, count in self.captures.items() if count > 0
-        )
+        if self.instrument_count == 0:
+            caps = None
+        else:
+            caps = [cap for cap, count in self.captures.items() if count > 0]
+        return self.tset.transform_for(caps)
 
 
 class SyncedStackedTransforms(StackedTransforms):
