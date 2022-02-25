@@ -10,7 +10,13 @@ from itertools import count
 
 from . import opparse
 from .tags import Tag, match_tag, tag as tag_factory
-from .utils import ABSENT, CodeNotFoundError, DictPile, cached_property
+from .utils import (
+    ABSENT,
+    CodeNotFoundError,
+    DictPile,
+    cached_property,
+    is_tooled,
+)
 
 _valid_hashvars = ("#enter", "#value", "#yield")
 
@@ -747,6 +753,12 @@ class MatchFunction:
         self.fn = fn
 
 
+def _dig(fn):
+    while hasattr(fn, "__wrapped__") and not is_tooled(fn):
+        fn = fn.__wrapped__
+    return fn
+
+
 def _resolve(selector, env, cnt):
     if isinstance(selector, Call):
         el = _resolve(selector.element, env, cnt)
@@ -755,7 +767,7 @@ def _resolve(selector, env, cnt):
         if isinstance(fn, types.MethodType):
             # If fn is a method, we add a capture for "self" that must
             # match the instance.
-            real_fn = fn.__func__
+            real_fn = _dig(fn.__func__)
             selfname = inspect.getfullargspec(real_fn).args[0]
             el = el.clone(name=real_fn)
             captures.append(
@@ -765,6 +777,10 @@ def _resolve(selector, env, cnt):
                     value=fn.__self__,
                 )
             )
+        else:
+            unwrapped = _dig(fn)
+            if fn is not unwrapped:
+                el = el.clone(name=unwrapped)
         return selector.clone(
             element=el,
             captures=tuple(captures),

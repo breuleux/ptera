@@ -1,12 +1,11 @@
 import functools
-import types
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 from .interpret import Immediate, Interactor, Total
 from .selector import check_element, select, verify
 from .transform import SyncedStackedTransforms, transform
-from .utils import autocreate, keyword_decorator
+from .utils import autocreate, is_tooled, keyword_decorator
 
 # Cache whether functions match selectors
 _selector_fit_cache = {}
@@ -367,11 +366,6 @@ def inplace(fn):
 
 
 tooled.inplace = inplace
-
-
-def is_tooled(fn):
-    """Return whether a function has been tooled for Ptera."""
-    return isinstance(fn, types.FunctionType) and hasattr(fn, "__ptera_info__")
 
 
 def _tooler(fn, captures):

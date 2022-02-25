@@ -161,3 +161,8 @@ def refstring(fn):
         )
 
     return ref
+
+
+def is_tooled(fn):
+    """Return whether a function has been tooled for Ptera."""
+    return isinstance(fn, types.FunctionType) and hasattr(fn, "__ptera_info__")

@@ -1,3 +1,4 @@
+import functools
 import sys
 
 import pytest
@@ -410,3 +411,23 @@ def test_probe_total_with_focus():
 def test_bad_probe_type():
     with pytest.raises(TypeError):
         probing("f > x", probe_type="wow")
+
+
+def plusone(fn):
+    @functools.wraps(fn)
+    def fn2(x):
+        return fn(x) + 1
+
+    return fn2
+
+
+def test_probe_decorated():
+    @plusone
+    def thrice(x):
+        twice = x + x
+        return twice + x
+
+    with probing("thrice > twice").values() as results:
+        assert thrice(10) == 31
+
+    assert results == [{"twice": 20}]
