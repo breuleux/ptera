@@ -10,34 +10,62 @@ Ptera is a powerful way to instrument your code for logging, debugging and testi
 * Create external asserts or conditional breakpoints.
 * Et cetera :)
 
-The main interface to ptera are the `global_probe` and `probing` functions. The only difference between them is that the first applies globally whereas the second is a context manager and applies only to the code inside a block:
+**TODO** link to rtd documentation
+
+## Example
+
+You can use Ptera to observe assignments to any variable in your program:
 
 ```python
-from ptera import global_probe, probing
+from ptera import probing
 
 def f(x):
-    y = x * x
-    return y + 1
+    y = 10
+    for i in range(1, x + 1):
+        y = y + i
+    return y
 
-global_probe("f > y").print()
+with probing("f > y").values() as values:
+    f(3)
 
-f(9)  # prints {"y": 81}
-
-with probing("f > y") as probe:
-    probe.print("y = {y}")
-
-    f(10)  # prints {"y": 100} and "y = 100"
-
-f(11)  # prints {"y": 121}
+# These are all the values taken by the y variable in f.
+assert values == [
+    {"y": 10},
+    {"y": 11},
+    {"y": 13},
+    {"y": 16},
+]
 ```
 
-`print()` is only one of a myriad operators. Ptera's interface is inspired from functional reactive programming and is identical to the interface of [giving](https://github.com/breuleux/giving) (itself based on `rx`). [See here for a more complete list of operators.](https://giving.readthedocs.io/en/latest/ref-operators.html)
+In the above,
 
+1. We *select* the variable `y` of function `f` using the selector `f > y`.
+2. We use the `values()` method to obtain a list in which the values of `y` will be progressively accumulated.
+3. When `f` is called within the `probing` block, assignments to `y` are intercepted and appended to the list.
+4. When the `probing` block finishes, the instrumentation is removed and `f` reverts to its normal behavior.
 
-Note: reduction operators such as `min` or `sum` are applied at program exit for `global_probe` or at the end of the `with` block with `probing`, so it is usually best to use `probing` for these.
+## Creating probes
 
+* `ptera.probing`: Probe variables inside a `with` block.
+* `ptera.global_probe`: Activate a global probe.
 
-## Examples
+## Using probes
+
+The interface for Ptera's probes is inspired from functional reactive programming and is identical to the interface of [giving](https://github.com/breuleux/giving) (itself based on `rx`). [See here for a complete list of operators.](https://giving.readthedocs.io/en/latest/ref-operators.html)
+
+You can always use `with probing(...).values()` as in the example at the top if you want to keep it simple and just obtain a list of values. You can also use `with probing(...).display()` to print the values instead.
+
+Beyond that, you can also define complex data processing pipelines. For example:
+
+```python
+with probing("f > x") as probe:
+    probe["x"].map(abs).max().print()
+    f(1234)
+```
+
+The above defines a pipeline that extracts the value of `x`, applies the `abs` function on every element, takes the maximum of these absolute values, and then prints it out. Keep in mind that this statement doesn't really *do* anything at the moment it is executed, it only *declares* a pipeline that will be activated whenever a probed variable is set afterwards. That is why `f` is called after and not before.
+
+## More examples
 
 Ptera is all about providing new ways to inspect what your programs are doing, so all examples will be based on this simple binary search function:
 
@@ -299,63 +327,7 @@ with probing("f(x) > g > x as gx").print():
     # Prints nothing
 ```
 
-### Example 3: sibling calls
-
-Selectors can also specify variables on different paths in the call graph. For example:
-
-```python
-def f(x):
-    v = g(x + 1) * h(-x - 1)
-    return v
-
-def g(y):
-    return y * 2
-
-def h(z):
-    return z * 3
-
-with probing("f(x, g(y), h(!z))") as probe:
-    probe.print()
-    f(10)
-    # {'z': -11, 'x': 10, 'y': 11}
-```
-
-Remember to set the focus with `!`. It should ideally be on the last variable to be set.
-
-There is currently no error if you don't set a focus, it will simply do nothing, so beware of that for the time being.
-
-### Example 4: tagging variables
-
-Using annotations, variables can be given various tags, and probes can use these tags instead of variable names.
-
-```python
-def fishy(x):
-    a: "@fish" = x + 1
-    b: "@fish & @trout" = x + 2
-    return a * b
-
-with probing("fishy > $x:@trout").print():
-    fishy(10)
-    # {'x': 12}
-
-with probing("fishy > $x:@fish").print():
-    fishy(10)
-    # {'x': 11}
-    # {'x': 12}
-```
-
-The `$x` syntax means that we are not matching a variable called `x`, but instead matching any variable that has the right condition (in this case, the tags fish or trout) and offering it under the name `x`. You can pass `raw=True` to `probing` to get `Capture` objects instead of values. The `Capture` object gives access to the variable's actual name. For example:
-
-```python
-with probing("fishy > $x:@fish", raw=True) as probe:
-    probe["x"].map(lambda x: {x.name: x.value}).print()
-    fishy(10)
-    # {'a': 11}
-    # {'b': 12}
-```
-
-
-### Example 5: overriding variables
+### Example 3: overriding variables
 
 It is also possible to override the value of a variable with the `override` (or `koverride`) methods:
 
@@ -389,53 +361,3 @@ with probing("add_ct(x) > ct") as probe:
     print(add_ct(3))   # sets ct = 10; prints 13
     print(add_ct(10))  # does not override anything; prints 11
 ```
-
-
-## global_probe
-
-`global_probe` works more or less the same way as `probing`, but it is not a context manager: it just works globally from the moment of its creation. This means that streams created with `global_probe` only end when the program ends, so operators that wait for the full stream before triggering, such as `min()`, will run at program exit, which limits their usefulness.
-
-```python
-global_probe("fact() as result").print()
-fact(2)
-# {'result': 1}
-# {'result': 2}
-fact(3)
-# {'result': 1}
-# {'result': 2}
-# {'result': 6}
-```
-
-## Absolute probes
-
-Here is a notation to probe a function using an "absolute path" in the module system:
-
-```python
-global_probe("/xyz.submodule/Klass/method > x")
-
-# is essentially equivalent to:
-
-from xyz.submodule import Klass
-global_probe("Klass.method > x")
-```
-
-The slashes represent a physical nesting rather than object attributes. For example, `/module.submodule/x/y` means:
-
-* Go in the file that defines `module.submodule`
-* Enter `def x` or `class x` (it will *not* work if `x` is imported from elsewhere)
-* Within that definition, enter `def y` or `class y`
-
-The helper function `ptera.refstring(fn)` can be used to get the absolute path for a function.
-
-Note:
-
-* Unlike the normal notation, the absolute notation bypasses decorators: `/module/function` will probe the function inside the `def function(): ...` in `module.py`, so it will work even if the function was wrapped by a decorator (unless the decorator does not actually call the function).
-* Although the `/module/function/closure` notation can theoretically point to closures, **this does not work yet.** (It will, eventually.)
-* Use `/module.submodule/func`, *not* `/module/submodule/func`. The former roughly corresponds to `from module.submodule import func` and the latter to `from module import submodule; func = submodule.func`, which can be different in Python. It's a bit odd, but it works that way to properly address Python quirks.
-
-
-## Operators
-
-All the [operators](https://giving.readthedocs.io/en/latest/ref-operators.html) defined in the `rx` and `giving` packages should be compatible with `global_probe` and `probing`. You can also define [custom operators](https://rxpy.readthedocs.io/en/latest/get_started.html#custom-operator).
-
-[Read this operator guide](https://giving.readthedocs.io/en/latest/guide.html#important-methods) for the most useful features (the `gv` variable in the examples has the same interface as probes).

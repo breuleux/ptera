@@ -1,6 +1,6 @@
 
-ptera.transform
-===============
+ptera.utils
+===========
 
-.. automodule:: ptera.transform
+.. automodule:: ptera.utils
     :members:

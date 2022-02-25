@@ -6,7 +6,14 @@ List of operators
 
 The operators listed here are all available as methods on the :class:`~ptera.probe.Probe` objects yielded by :func:`~ptera.probe.probing`.
 
-Ptera's operators come from the giving_ package, which itself derives most of its operators from the rx_ package.
+.. important::
+    Ptera's operators come from the giving_ package, which itself derives most of its operators from the rx_ package.
+
+    Since most of these operators are defined in different packages, the documentation might not fully match how they are used with Ptera. So, keep this in mind:
+
+    * ``with given() as gv`` works the same as ``with probing(...) as prb``. They are different streams, but they have the same interface and the same operators are defined on them.
+    * Anything that is done on a variable named ``gv`` also works on a probe.
+    * The operators defined in the ``rx`` package are not originally methods, because they have decided to use a different API. However, Ptera does offer them as methods with the same name. So if you see code such as ``op = contains(42)``, that means you can call ``probe.contains(42)`` (which, to be clear, is equivalent to ``probe.pipe(contains(42))``).
 
 .. _giving: https://giving.readthedocs.io
 .. _rx: https://rxpy.readthedocs.io/en/latest/reference_operators.html

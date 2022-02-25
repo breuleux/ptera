@@ -761,10 +761,10 @@ def transform(fn, proceed, to_instrument=True, set_conformer=True):
 
         def f(x: int):
             with proceed(f) as FR:
-                FR.interact("#enter", None, None, True)
-                x = FR.interact("x", None, int, x)
-                y = FR.interact("y", None, None, x * x)
-                VALUE = FR.interact("#value", None, None, y + 1)
+                FR.interact("#enter", None, None, True, False)
+                x = FR.interact("x", None, int, x, True)
+                y = FR.interact("y", None, None, x * x, True)
+                VALUE = FR.interact("#value", None, None, y + 1, True)
                 return VALUE
 
     Arguments:
@@ -773,9 +773,9 @@ def transform(fn, proceed, to_instrument=True, set_conformer=True):
           and which should yield some object that has an ``interact``
           method. Whenever a variable
           is changed, the ``interact`` method receives the arguments
-          ``(symbol, key, category, value)``. See
+          ``(symbol, key, category, value, overridable)``. See
           :class:`~ptera.overlay.proceed` and
-          :class:`~ptera.interpret.Interactor`.
+          :class:`~ptera.interpret.Interactor.interact`.
         to_instrument: List of :class:`~ptera.selector.Element`
           representing the variables to instrument, or True. If
           True (or if one Element is a generic), all variables
