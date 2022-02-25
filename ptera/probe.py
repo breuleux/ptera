@@ -38,9 +38,17 @@ class Probe(SourceProxy):
             of any variable with the Parameter tag under the generic name "x".
             When raw is True, the actual name of the variable is preserved in a
             Capture object associated to x.
+        probe_type: Either "immediate", "total", or None (the default).
+
+            * If "immediate", use :class:`~ptera.interpret.Immediate`.
+            * If "total", use :class:`~ptera.interpret.Total`.
+            * If None, determine what to use based on whether the selector has
+              a focus or not.
     """
 
-    def __init__(self, *selectors, raw=False, _obs=None, _root=None):
+    def __init__(
+        self, *selectors, raw=False, probe_type=None, _obs=None, _root=None
+    ):
         # Note: the private _obs and _root parameters are used to "fork"
         # the probe when using operators on it while keeping a reference
         # to the root or master probe.
@@ -51,10 +59,15 @@ class Probe(SourceProxy):
         super().__init__(_obs=_obs, _root=_root)
 
         if selectors:
+            if probe_type not in ("immediate", "total", None):
+                raise TypeError(
+                    "probe_type must be 'immediate', 'total' or None"
+                )
             self._selectors = [select(s) for s in selectors]
             rules = [
                 Immediate(sel, intercept=self._emit)
-                if sel.focus
+                if probe_type != "total"
+                and (sel.focus or probe_type == "immediate")
                 else Total(sel, close=self._emit)
                 for sel in self._selectors
             ]
@@ -200,7 +213,7 @@ class Probe(SourceProxy):
         self._uninstall_tooling()
 
 
-def probing(*selectors, raw=False):
+def probing(*selectors, raw=False, probe_type=None):
     """Probe that can be used as a context manager.
 
     Example:
@@ -216,11 +229,17 @@ def probing(*selectors, raw=False):
         selectors: The selector strings describing the variables to probe (at least one).
         raw: Defaults to False. If True, produce a stream of :class:`~ptera.interpret.Capture` objects that
             contain extra information about the capture.
+        probe_type: Either "immediate", "total", or None (the default).
+
+            * If "immediate", use :class:`~ptera.interpret.Immediate`.
+            * If "total", use :class:`~ptera.interpret.Total`.
+            * If None, determine what to use based on whether the selector has
+              a focus or not.
     """
-    return Probe(*selectors, raw=raw)
+    return Probe(*selectors, raw=raw, probe_type=probe_type)
 
 
-def global_probe(*selectors, raw=False):
+def global_probe(*selectors, raw=False, probe_type=None):
     """Set a probe globally.
 
     Example:
@@ -237,8 +256,14 @@ def global_probe(*selectors, raw=False):
         selectors: The selector strings describing the variables to probe (at least one).
         raw: Defaults to False. If True, produce a stream of :class:`~ptera.interpret.Capture` objects that
             contain extra information about the capture.
+        probe_type: Either "immediate", "total", or None (the default).
+
+            * If "immediate", use :class:`~ptera.interpret.Immediate`.
+            * If "total", use :class:`~ptera.interpret.Total`.
+            * If None, determine what to use based on whether the selector has
+              a focus or not.
     """
-    prb = Probe(*selectors, raw=raw)
+    prb = Probe(*selectors, raw=raw, probe_type=probe_type)
     prb.__enter__()
     return prb
 

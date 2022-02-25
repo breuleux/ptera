@@ -374,3 +374,39 @@ def test_probe_total():
         f(12)
 
     assert results == [{"x": 12, "a": 144}]
+
+
+def test_probe_total_with_focus():
+    def coincoin(x):
+        return x * x
+
+    def nager(x):
+        a = x * x
+        return a
+
+    def canard(x):
+        for i in range(x):
+            coincoin(i)
+        nager(5)
+        nager(6)
+
+    with probing(
+        "canard(coincoin(!x), nager(a))", probe_type="total", raw=True
+    ) as prb:
+        results = prb.accum()
+        canard(3)
+
+    assert len(results) == 3
+
+    assert results[0]["x"].value == 0
+    assert results[1]["x"].value == 1
+    assert results[2]["x"].value == 2
+
+    assert results[0]["a"].values == [25, 36]
+    assert results[1]["a"].values == [25, 36]
+    assert results[2]["a"].values == [25, 36]
+
+
+def test_bad_probe_type():
+    with pytest.raises(TypeError):
+        probing("f > x", probe_type="wow")
