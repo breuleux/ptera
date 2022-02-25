@@ -62,7 +62,7 @@ def test_probe():
     loopy()
     assert results == [x * x for x in range(100)]
 
-    probe.__exit__()
+    probe.deactivate()
 
     results.clear()
     loopy()
@@ -151,8 +151,8 @@ def test_two_probes():
     assert results1 == [x * x for x in range(100)]
     assert results2 == [-x for x in range(100)]
 
-    probe1.__exit__()
-    probe2.__exit__()
+    probe1.deactivate()
+    probe2.deactivate()
 
 
 def test_probe_same_var_twice():

@@ -212,6 +212,14 @@ class Probe(SourceProxy):
         global_probes.remove(self)
         self._uninstall_tooling()
 
+    def activate(self):
+        """Activate this probe."""
+        self.__enter__()
+
+    def deactivate(self):
+        """Deactivate this probe."""
+        self.__exit__(None, None, None)
+
 
 def probing(*selectors, raw=False, probe_type=None):
     """Probe that can be used as a context manager.
@@ -264,7 +272,7 @@ def global_probe(*selectors, raw=False, probe_type=None):
               a focus or not.
     """
     prb = Probe(*selectors, raw=raw, probe_type=probe_type)
-    prb.__enter__()
+    prb.activate()
     return prb
 
 
@@ -274,4 +282,4 @@ def _terminate_global_probes():  # pragma: no cover
     # probes if reduction operations like min() are requested, because it tells
     # them that there is no more data and that they can proceed.
     for probe in list(global_probes):
-        probe.__exit__(None, None, None)
+        probe.deactivate()
