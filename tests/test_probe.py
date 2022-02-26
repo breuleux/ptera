@@ -431,3 +431,14 @@ def test_probe_decorated():
         assert thrice(10) == 31
 
     assert results == [{"twice": 20}]
+
+
+def test_env_argument():
+    def xxx(x):
+        bar = 31
+        return x + bar
+
+    with probing("foo > bar", env={"foo": xxx}).values() as values:
+        xxx(10)
+
+    assert values == [{"bar": 31}]

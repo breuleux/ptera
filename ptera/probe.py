@@ -44,10 +44,19 @@ class Probe(SourceProxy):
             * If "total", use :class:`~ptera.interpret.Total`.
             * If None, determine what to use based on whether the selector has
               a focus or not.
+        env: A dictionary that will be used to resolve symbols in the selector.
+            If it is not provided, ptera will seek the locals and globals
+            dictionaries of the scope where this function is called.
     """
 
     def __init__(
-        self, *selectors, raw=False, probe_type=None, _obs=None, _root=None
+        self,
+        *selectors,
+        raw=False,
+        probe_type=None,
+        env=None,
+        _obs=None,
+        _root=None
     ):
         # Note: the private _obs and _root parameters are used to "fork"
         # the probe when using operators on it while keeping a reference
@@ -63,7 +72,7 @@ class Probe(SourceProxy):
                 raise TypeError(
                     "probe_type must be 'immediate', 'total' or None"
                 )
-            self._selectors = [select(s) for s in selectors]
+            self._selectors = [select(s, env=env) for s in selectors]
             rules = [
                 Immediate(sel, intercept=self._emit)
                 if probe_type != "total"
@@ -221,7 +230,7 @@ class Probe(SourceProxy):
         self.__exit__(None, None, None)
 
 
-def probing(*selectors, raw=False, probe_type=None):
+def probing(*selectors, raw=False, probe_type=None, env=None):
     """Probe that can be used as a context manager.
 
     Example:
@@ -243,11 +252,14 @@ def probing(*selectors, raw=False, probe_type=None):
             * If "total", use :class:`~ptera.interpret.Total`.
             * If None, determine what to use based on whether the selector has
               a focus or not.
+        env: A dictionary that will be used to resolve symbols in the selector.
+            If it is not provided, ptera will seek the locals and globals
+            dictionaries of the scope where this function is called.
     """
-    return Probe(*selectors, raw=raw, probe_type=probe_type)
+    return Probe(*selectors, raw=raw, probe_type=probe_type, env=env)
 
 
-def global_probe(*selectors, raw=False, probe_type=None):
+def global_probe(*selectors, raw=False, probe_type=None, env=None):
     """Set a probe globally.
 
     Example:
@@ -270,8 +282,11 @@ def global_probe(*selectors, raw=False, probe_type=None):
             * If "total", use :class:`~ptera.interpret.Total`.
             * If None, determine what to use based on whether the selector has
               a focus or not.
+        env: A dictionary that will be used to resolve symbols in the selector.
+            If it is not provided, ptera will seek the locals and globals
+            dictionaries of the scope where this function is called.
     """
-    prb = Probe(*selectors, raw=raw, probe_type=probe_type)
+    prb = Probe(*selectors, raw=raw, probe_type=probe_type, env=env)
     prb.activate()
     return prb
 
