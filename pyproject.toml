@@ -5,7 +5,7 @@ description = "Call graph addressing library."
 authors = ["Olivier Breuleux <breuleux@gmail.com>"]
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/breuleux/ptera"
+repository = "https://github.com/mila-iqia/ptera"
 
 [tool.poetry.dependencies]
 python = "^3.6"
@@ -28,13 +28,10 @@ line-length = 80
 
 [tool.isort]
 known_first_party = "ptera"
-known_third_party = "numpy,torch,torchvision"
+known_third_party = ""
 multi_line_output = 3
 include_trailing_comma = true
 combine_as_imports = true
-
-[tool.unimport]
-exclude = ["__init__.py", "test_tools.py"]
 
 [tool.coverage.run]
 omit = []

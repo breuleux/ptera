@@ -9,6 +9,25 @@ Guide
 Probing
 -------
 
+Probe a variable
+~~~~~~~~~~~~~~~~
+
+To get a stream of the value of the variable named ``a`` in the function ``f``, pass the selector ``"f > a"`` to :func:`~ptera.probe.probing`:
+
+.. code-block:: python
+
+    def f(x, y):
+        a = x * x
+        b = y * y
+        return a + b
+
+    with probing("f > a").values() as values:
+        f(12, 5)
+
+    assert values == [{"a": 144}]
+
+The function ``f`` should be visible in the scope of the call to ``probing`` (alternatively, you can provide an explicit environment as the ``env`` argument).
+
 .. _probe-retval:
 
 Probe the return value

@@ -3,14 +3,20 @@
 
 Ptera is a powerful way to instrument your code for logging, debugging and testing purposes. With a simple call to `ptera.probing()`, you can:
 
-* Obtain a stream of the values taken by any variable.
-* Probe multiple variables from multiple functions in multiple scopes.
-* Apply maps, filters, reductions, and much more to the streams.
-* Override the values of variables based on complex conditions.
-* Create external asserts or conditional breakpoints.
+* [Obtain a stream of the values taken by any variable.](https://ptera.readthedocs.io/en/latest/guide.html#probe-a-variable)
+* [Probe multiple variables from multiple functions in multiple scopes.](https://ptera.readthedocs.io/en/latest/guide.html#probe-multiple-variables)
+* [Apply maps, filters, reductions, and much more to the streams.](https://ptera.readthedocs.io/en/latest/guide.html#map-filter-reduce)
+* [Override the values of variables based on complex conditions.](https://ptera.readthedocs.io/en/latest/guide.html#overriding-values)
+* Create [external asserts](https://ptera.readthedocs.io/en/latest/guide.html#asserts) or [conditional breakpoints](https://ptera.readthedocs.io/en/latest/guide.html#conditional-breakpoints).
 * Et cetera :)
 
-**TODO** link to rtd documentation
+📖 **[Read the documentation](https://ptera.readthedocs.io/en/latest)**
+
+## Install
+
+```bash
+pip install ptera
+```
 
 ## Example
 
@@ -46,12 +52,12 @@ In the above,
 
 ## Creating probes
 
-* `ptera.probing`: Probe variables inside a `with` block.
-* `ptera.global_probe`: Activate a global probe.
+* [`ptera.probing`](https://ptera.readthedocs.io/en/latest/ref-probe.html#ptera.probe.probing): Probe variables inside a `with` block.
+* [`ptera.global_probe`](https://ptera.readthedocs.io/en/latest/ref-probe.html#ptera.probe.global_probe): Activate a global probe.
 
 ## Using probes
 
-The interface for Ptera's probes is inspired from functional reactive programming and is identical to the interface of [giving](https://github.com/breuleux/giving) (itself based on `rx`). [See here for a complete list of operators.](https://giving.readthedocs.io/en/latest/ref-operators.html)
+The interface for Ptera's probes is inspired from functional reactive programming and is identical to the interface of [giving](https://github.com/breuleux/giving) (itself based on `rx`). [See here for a complete list of operators.](https://ptera.readthedocs.io/en/latest/ref-operators.html)
 
 You can always use `with probing(...).values()` as in the example at the top if you want to keep it simple and just obtain a list of values. You can also use `with probing(...).display()` to print the values instead.
 
