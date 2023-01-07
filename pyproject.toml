@@ -8,9 +8,9 @@ readme = "README.md"
 repository = "https://github.com/mila-iqia/ptera"
 
 [tool.poetry.dependencies]
-python = ">= 3.7, < 3.11"
+python = "^3.7"
 codefind = {version = "^0.1.2", python = "^3.8"}
-giving = "^0.4.0"
+giving = "^0.4.1"
 
 [tool.poetry.dev-dependencies]
 black = ">=21.5b1"
