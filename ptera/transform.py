@@ -577,7 +577,6 @@ class PteraTransformer(NodeTransformer):
         )
 
     def visit_For(self, node):
-
         new_body = self.generate_interactions(node.target)
         new_body.extend(self.visit_body(node.body))
 

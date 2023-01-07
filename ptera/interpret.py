@@ -74,7 +74,6 @@ class Interactor:
             varname = key.affix_to(varname)
 
         with self.work_on(varname, key, category) as wfr:
-
             fr_value = wfr.intercept(value)
             if fr_value is not ABSENT:
                 if not overridable:

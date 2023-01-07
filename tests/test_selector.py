@@ -13,7 +13,6 @@ def lex(code):
 
 @one_test_per_assert
 def test_lexer():
-
     assert lex("apple > banana") == [
         ("apple", "WORD"),
         (">", "OPERATOR"),
@@ -160,7 +159,6 @@ def apple():
 
 @one_test_per_assert
 def test_select():
-
     assert sel.select("apple > banana:tag.Sublime") == sel.Call(
         element=sel.Element(name=apple, capture="/0"),
         captures=(
@@ -205,7 +203,6 @@ def _rewrite(before, after, required, focus=None):
 
 @one_test_per_assert
 def test_rewrite():
-
     assert _rewrite(
         before="bug(world) > spider(w, e, b)",
         after="bug(world)",
