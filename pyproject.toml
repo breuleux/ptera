@@ -14,7 +14,7 @@ giving = "^0.4.1"
 
 [tool.poetry.dev-dependencies]
 black = ">=21.5b1"
-pytest = ">=6.2.5"
+pytest = ">=7.2.0"
 pytest-cov = ">=2.8.1"
 isort = {extras = ["pyproject"], version = "^5.6.4"}
 flake8 = "^3.7.9"
